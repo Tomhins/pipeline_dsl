@@ -85,6 +85,24 @@ def _coerce_rhs(raw: str) -> float | str:
         return cleaned
 
 
+def _check_path_sandbox(path: str, context: "PipelineContext") -> None:
+    """Raise :exc:`PermissionError` if *path* is outside the sandbox directory.
+
+    When ``context.sandbox_dir`` is ``None`` (the default) every path is
+    allowed.  Set a sandbox via ``set sandbox = ./data`` in a pipeline.
+    """
+    if context.sandbox_dir is None:
+        return
+    abs_path = os.path.realpath(os.path.abspath(path))
+    abs_sandbox = os.path.realpath(os.path.abspath(context.sandbox_dir))
+    if not (abs_path == abs_sandbox or abs_path.startswith(abs_sandbox + os.sep)):
+        raise PermissionError(
+            f"Access denied: '{path}' is outside the sandbox "
+            f"'{context.sandbox_dir}'. "
+            "Use 'set sandbox = <dir>' to change the allowed directory."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Base node
 # ---------------------------------------------------------------------------
@@ -104,18 +122,41 @@ class ASTNode:
 
 @dataclass
 class SourceNode(ASTNode):
-    """Load a CSV file into the pipeline context.
+    """Load a CSV or Parquet file into the pipeline context.
 
     Supports ``$variable`` references in the file path.
+
+    When *chunk_size* is set the executor automatically switches to
+    chunked mode (see :func:`~executor._run_chunked_pipeline`).  Calling
+    ``execute`` directly still loads the full file so tests and sub-pipelines
+    work without changes.
+
+    Examples::
+
+        source "data/people.csv"
+        source "data/big.csv" chunk 100000
+        source "data/snapshot.parquet"
     """
 
     file_path: str
+    chunk_size: int | None = None
 
     def execute(self, context: "PipelineContext") -> None:
         path = _substitute_vars(self.file_path, context)
+        _check_path_sandbox(path, context)
         if not os.path.exists(path):
             raise FileNotFoundError(f"Source file not found: '{path}'")
-        context.df = pd.read_csv(path)
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".parquet":
+            try:
+                context.df = pd.read_parquet(path)
+            except ImportError:
+                raise RuntimeError(
+                    "source: reading Parquet files requires 'pyarrow'. "
+                    "Install it with: pip install pyarrow"
+                )
+        else:
+            context.df = pd.read_csv(path)
         context.grouped = None
 
 
@@ -125,6 +166,7 @@ class ForeachNode(ASTNode):
 
     Example: ``foreach "data/monthly/*.csv"``
     The resulting DataFrame is the row-wise union of all matched files.
+    Each matched file is checked against the sandbox when one is active.
     """
 
     pattern: str
@@ -136,6 +178,8 @@ class ForeachNode(ASTNode):
             raise FileNotFoundError(
                 f"foreach: no files matched pattern '{pattern}'"
             )
+        for f in files:
+            _check_path_sandbox(f, context)
         dfs = [pd.read_csv(f) for f in files]
         context.df = pd.concat(dfs, ignore_index=True)
         context.grouped = None
@@ -155,6 +199,7 @@ class IncludeNode(ASTNode):
         from ppl_parser import parse_lines
 
         path = _substitute_vars(self.file_path, context)
+        _check_path_sandbox(path, context)
         if not os.path.exists(path):
             raise FileNotFoundError(f"include: file not found: '{path}'")
         lines = read_ppl_file(path)
@@ -779,15 +824,27 @@ class MultiAggNode(ASTNode):
 
 @dataclass
 class JoinNode(ASTNode):
-    """Inner-join the current DataFrame with another CSV on a key column."""
+    """Join the current DataFrame with another CSV on a key column.
+
+    Supports all standard join types via the *how* parameter.
+
+    Examples::
+
+        join "lookup.csv" on id               # inner join (default)
+        join "lookup.csv" on id left          # left join — keep all left rows
+        join "lookup.csv" on id right         # right join
+        join "lookup.csv" on id outer         # full outer join
+    """
 
     file_path: str
     key: str
+    how: str = "inner"
 
     def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("join: no data loaded — use 'source' first")
         path = _substitute_vars(self.file_path, context)
+        _check_path_sandbox(path, context)
         if not os.path.exists(path):
             raise FileNotFoundError(f"join: file not found: '{path}'")
         right = pd.read_csv(path)
@@ -801,7 +858,7 @@ class JoinNode(ASTNode):
                 f"join: key '{self.key}' not found in '{path}'. "
                 f"Available: {list(right.columns)}"
             )
-        context.df = pd.merge(context.df, right, on=self.key, how="inner")
+        context.df = pd.merge(context.df, right, on=self.key, how=self.how)
         context.grouped = None
 
 
@@ -815,6 +872,7 @@ class MergeNode(ASTNode):
         if context.df is None:
             raise RuntimeError("merge: no data loaded — use 'source' first")
         path = _substitute_vars(self.file_path, context)
+        _check_path_sandbox(path, context)
         if not os.path.exists(path):
             raise FileNotFoundError(f"merge: file not found: '{path}'")
         other = pd.read_csv(path)
@@ -828,7 +886,11 @@ class MergeNode(ASTNode):
 
 @dataclass
 class SaveNode(ASTNode):
-    """Write the current DataFrame to a CSV or JSON file."""
+    """Write the current DataFrame to a CSV, JSON, or Parquet file.
+
+    The output format is determined by the file extension:
+    ``.csv`` → CSV, ``.json`` → JSON, ``.parquet`` → Parquet.
+    """
 
     file_path: str
 
@@ -836,12 +898,21 @@ class SaveNode(ASTNode):
         if context.df is None:
             raise RuntimeError("save: no data to save — pipeline produced no output")
         path = _substitute_vars(self.file_path, context)
+        _check_path_sandbox(path, context)
         out_dir = os.path.dirname(path)
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
         ext = os.path.splitext(path)[1].lower()
         if ext == ".json":
             context.df.to_json(path, orient="records", indent=2)
+        elif ext == ".parquet":
+            try:
+                context.df.to_parquet(path, index=False)
+            except ImportError:
+                raise RuntimeError(
+                    "save: writing Parquet files requires 'pyarrow'. "
+                    "Install it with: pip install pyarrow"
+                )
         else:
             context.df.to_csv(path, index=False)
 
@@ -1032,7 +1103,11 @@ class SetNode(ASTNode):
     value: str
 
     def execute(self, context: "PipelineContext") -> None:
-        context.variables[self.name] = self.value.strip("\"'")
+        value = self.value.strip("\"'")
+        context.variables[self.name] = value
+        # Special variable: 'sandbox' activates the filesystem sandbox.
+        if self.name == "sandbox":
+            context.sandbox_dir = value
 
 
 @dataclass
@@ -1052,3 +1127,57 @@ class EnvNode(ASTNode):
                 f"env: environment variable '{self.var_name}' is not set"
             )
         context.variables[self.var_name] = val
+
+
+# ---------------------------------------------------------------------------
+# Error recovery node
+# ---------------------------------------------------------------------------
+
+@dataclass
+class TryNode(ASTNode):
+    """Execute a block of commands, running an error handler if any fail.
+
+    The body commands are executed in order.  If any raises an exception:
+
+    * ``on_error skip``  — silently swallow the error and continue.
+    * ``on_error log "message"`` — print *message* (plus the error) and continue.
+    * ``on_error <command>`` — execute *command* (e.g. ``fill age 0``) and
+      continue.
+
+    The pipeline context at the point of failure is preserved so the
+    ``on_error`` handler can inspect or repair it.
+
+    Example::
+
+        try
+          cast age int
+          assert age > 0
+        on_error fill age 0
+
+    ``body`` holds pre-parsed :class:`ASTNode` objects for the try block.
+    ``on_error_nodes`` holds pre-parsed nodes for the handler (empty for
+    ``skip`` and ``log`` actions, which are handled inline).
+    ``error_action`` is the raw string after ``on_error`` for display /
+    ``log`` message extraction.
+    """
+
+    body: list          # list[ASTNode]
+    on_error_nodes: list  # list[ASTNode], empty for skip/log actions
+    error_action: str   # raw on_error argument string
+
+    def execute(self, context: "PipelineContext") -> None:
+        try:
+            for node in self.body:
+                node.execute(context)
+        except Exception as exc:
+            action_lower = self.error_action.strip().lower()
+            if action_lower == "skip":
+                pass  # silently continue
+            elif action_lower.startswith("log "):
+                msg = _substitute_vars(
+                    self.error_action[4:].strip().strip("\"'"), context
+                )
+                print(f"[TRY] {msg}: {exc}")
+            else:
+                for node in self.on_error_nodes:
+                    node.execute(context)
