@@ -1,6 +1,70 @@
 const vscode = require('vscode');
 const path = require('path');
 
+// ---------------------------------------------------------------------------
+// Command documentation — used by the hover provider
+// ---------------------------------------------------------------------------
+const COMMAND_DOCS = {
+    source:    '`source "file.csv"`\n\nLoad a CSV file into the pipeline.',
+    save:      '`save "file.csv|json"`\n\nWrite the current DataFrame to a CSV or JSON file.',
+    merge:     '`merge "file.csv"`\n\nAppend rows from another CSV file (union / stack).',
+    join:      '`join "file.csv" on <column>`\n\nInner-join with another CSV on a key column.',
+    foreach:   '`foreach "glob/pattern/*.csv"`\n\nLoad and concatenate all CSVs matching a glob pattern.',
+    include:   '`include "file.ppl"`\n\nInclude and execute another pipeline file inline.',
+    filter:    '`filter <col> <op> <value>`\n\nFilter rows by a condition. Supports `and`/`or` on one line.\n\nOperators: `>` `<` `>=` `<=` `==` `!=`',
+    where:     '`where <col> <op> <value>`\n\nSQL-friendly alias for `filter`.',
+    select:    '`select col1, col2, ...`\n\nKeep only the listed columns.',
+    group:     '`group by col1, col2, ...`\n\nGroup the data by one or more columns for subsequent aggregation.',
+    count:     '`count` or `count if <col> <op> <value>`\n\nCount rows in the current dataset (or matching a condition) without filtering.',
+    sort:      '`sort by col [asc|desc], ...`\n\nSort rows by one or more columns.',
+    rename:    '`rename <old> <new>`\n\nRename a column.',
+    add:       '`add <col> = <expression>`\n\nAdd a computed column. Supports arithmetic and `if … then … else …`.\n\nExample: `add tax = salary * 0.2`\nExample: `add band = if salary > 100000 then "senior" else "junior"`',
+    drop:      '`drop col1, col2, ...`\n\nRemove one or more columns.',
+    limit:     '`limit <n>`\n\nKeep only the first *n* rows.',
+    distinct:  '`distinct`\n\nRemove duplicate rows.',
+    sample:    '`sample <n>` or `sample <n>%`\n\nTake a random sample of *n* rows or *n*% of the data.',
+    trim:      '`trim <column>`\n\nStrip leading/trailing whitespace from a string column.',
+    uppercase: '`uppercase <column>`\n\nConvert a string column to uppercase.',
+    lowercase: '`lowercase <column>`\n\nConvert a string column to lowercase.',
+    cast:      '`cast <column> <type>`\n\nCast a column to a different type.\n\nTypes: `int` `float` `str` `datetime` `bool`',
+    replace:   '`replace <col> <old> <new>`\n\nReplace occurrences of a value in a column.',
+    pivot:     '`pivot index=<col> column=<col> value=<col>`\n\nReshape data from long to wide format.',
+    sum:       '`sum <column>`\n\nSum a numeric column (per group or total).',
+    avg:       '`avg <column>`\n\nAverage of a numeric column (per group or total).',
+    min:       '`min <column>`\n\nMinimum value of a column (per group or total).',
+    max:       '`max <column>`\n\nMaximum value of a column (per group or total).',
+    agg:       '`agg sum <col>, avg <col>, count`\n\nMultiple aggregations at once after a `group by`.\n\nVerbs: `sum` `avg` `min` `max` `count`',
+    print:     '`print`\n\nPrint the current DataFrame to stdout.',
+    schema:    '`schema`\n\nPrint column names and data types.',
+    inspect:   '`inspect`\n\nPrint column names, types, null counts, and unique counts.',
+    head:      '`head <n>`\n\nPrint the first *n* rows to stdout (does not modify pipeline data).',
+    log:       '`log <message>`\n\nPrint a message to the terminal during execution.',
+    assert:    '`assert <col> <op> <value>`\n\nFail the pipeline if any row violates the condition.',
+    fill:      '`fill <column> <strategy|value>`\n\nFill missing values.\n\nStrategies: `mean` `median` `mode` `forward` `backward` `drop`\nOr supply a literal value: `fill country "Unknown"`',
+    set:       '`set <name> = <value>`\n\nSet a named variable referenceable as `$name` in other commands.',
+    env:       '`env <VAR_NAME>`\n\nLoad an OS environment variable into the pipeline variable store.',
+    // modifiers / keywords
+    by:        'Used with `group by` and `sort by`.',
+    on:        'Used with `join … on <column>`.',
+    asc:       'Sort direction: ascending (default).',
+    desc:      'Sort direction: descending.',
+    and:       'Logical AND for compound `filter`/`where` conditions.',
+    or:        'Logical OR for compound `filter`/`where` conditions.',
+    if:        'Used in `add <col> = if <cond> then <val> else <val>`.',
+    then:      'Used in `add <col> = if <cond> then <val> else <val>`.',
+    else:      'Used in `add <col> = if <cond> then <val> else <val>`.',
+    mean:      'Fill strategy: replace nulls with the column mean.',
+    median:    'Fill strategy: replace nulls with the column median.',
+    mode:      'Fill strategy: replace nulls with the column mode.',
+    forward:   'Fill strategy: forward-fill (propagate last valid value).',
+    backward:  'Fill strategy: backward-fill.',
+    int:       'Cast type: integer.',
+    float:     'Cast type: floating-point number.',
+    str:       'Cast type: string.',
+    datetime:  'Cast type: datetime.',
+    bool:      'Cast type: boolean.',
+};
+
 /**
  * Called when the extension is activated (first time a .ppl file is opened).
  * @param {vscode.ExtensionContext} context
@@ -39,7 +103,44 @@ function activate(context) {
 
     context.subscriptions.push(runCmd);
 
-    // Status bar item — shows while a .ppl file is active
+    // -----------------------------------------------------------------------
+    // Hover provider — show docs when hovering over a keyword
+    // -----------------------------------------------------------------------
+    const hoverProvider = vscode.languages.registerHoverProvider('ppl', {
+        provideHover(document, position) {
+            const range = document.getWordRangeAtPosition(position, /[a-zA-Z_]\w*/);
+            if (!range) return;
+            const word = document.getText(range).toLowerCase();
+            const doc = COMMAND_DOCS[word];
+            if (!doc) return;
+            const md = new vscode.MarkdownString(doc);
+            md.isTrusted = true;
+            return new vscode.Hover(md, range);
+        }
+    });
+    context.subscriptions.push(hoverProvider);
+
+    // -----------------------------------------------------------------------
+    // Completion provider — suggest commands at the start of a line
+    // -----------------------------------------------------------------------
+    const completionProvider = vscode.languages.registerCompletionItemProvider('ppl', {
+        provideCompletionItems(document, position) {
+            const linePrefix = document.lineAt(position).text.slice(0, position.character).trimStart();
+            // Only suggest top-level keywords at the beginning of a line
+            if (linePrefix.includes(' ')) return undefined;
+
+            return Object.entries(COMMAND_DOCS)
+                .filter(([kw]) => kw in COMMAND_DOCS)
+                .map(([kw, doc]) => {
+                    const item = new vscode.CompletionItem(kw, vscode.CompletionItemKind.Keyword);
+                    item.documentation = new vscode.MarkdownString(doc);
+                    return item;
+                });
+        }
+    });
+    context.subscriptions.push(completionProvider);
+
+
     const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBar.command = 'ppl.runPipeline';
     statusBar.text = '$(play) Run Pipeline';

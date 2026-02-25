@@ -1,0 +1,222 @@
+{
+  "source": {
+    "prefix": "source",
+    "body": ["source \"${1:data/file.csv}\""],
+    "description": "Load a CSV file into the pipeline"
+  },
+  "save csv": {
+    "prefix": "save",
+    "body": ["save \"${1:output/results.csv}\""],
+    "description": "Save the current DataFrame to a CSV file"
+  },
+  "save json": {
+    "prefix": "savejson",
+    "body": ["save \"${1:output/results.json}\""],
+    "description": "Save the current DataFrame to a JSON file"
+  },
+  "filter": {
+    "prefix": "filter",
+    "body": ["filter ${1:column} ${2:>} ${3:value}"],
+    "description": "Filter rows by a condition"
+  },
+  "filter compound": {
+    "prefix": "filterand",
+    "body": ["filter ${1:col1} ${2:>} ${3:val1} and ${4:col2} ${5:>} ${6:val2}"],
+    "description": "Filter rows with an AND compound condition"
+  },
+  "where": {
+    "prefix": "where",
+    "body": ["where ${1:column} ${2:>} ${3:value}"],
+    "description": "Alias for filter (SQL-friendly)"
+  },
+  "select": {
+    "prefix": "select",
+    "body": ["select ${1:col1}, ${2:col2}"],
+    "description": "Keep only the listed columns"
+  },
+  "group by": {
+    "prefix": "group",
+    "body": ["group by ${1:column}"],
+    "description": "Group by one or more columns"
+  },
+  "count": {
+    "prefix": "count",
+    "body": ["count"],
+    "description": "Count rows (optionally within groups)"
+  },
+  "count if": {
+    "prefix": "countif",
+    "body": ["count if ${1:column} ${2:>} ${3:value}"],
+    "description": "Print count of matching rows without filtering"
+  },
+  "sort by": {
+    "prefix": "sort",
+    "body": ["sort by ${1:column} ${2|asc,desc|}"],
+    "description": "Sort rows by one or more columns"
+  },
+  "rename": {
+    "prefix": "rename",
+    "body": ["rename ${1:old_name} ${2:new_name}"],
+    "description": "Rename a column"
+  },
+  "add computed": {
+    "prefix": "add",
+    "body": ["add ${1:new_col} = ${2:expression}"],
+    "description": "Add a computed column"
+  },
+  "add if then else": {
+    "prefix": "addif",
+    "body": ["add ${1:new_col} = if ${2:column} ${3:>} ${4:value} then ${5:true_val} else ${6:false_val}"],
+    "description": "Add a column with a conditional value"
+  },
+  "drop": {
+    "prefix": "drop",
+    "body": ["drop ${1:col1}, ${2:col2}"],
+    "description": "Remove one or more columns"
+  },
+  "limit": {
+    "prefix": "limit",
+    "body": ["limit ${1:100}"],
+    "description": "Keep only the first N rows"
+  },
+  "distinct": {
+    "prefix": "distinct",
+    "body": ["distinct"],
+    "description": "Remove duplicate rows"
+  },
+  "sample n": {
+    "prefix": "sample",
+    "body": ["sample ${1:100}"],
+    "description": "Take a random sample of N rows"
+  },
+  "sample pct": {
+    "prefix": "samplepct",
+    "body": ["sample ${1:10}%"],
+    "description": "Take a random sample of N% of the data"
+  },
+  "trim": {
+    "prefix": "trim",
+    "body": ["trim ${1:column}"],
+    "description": "Strip leading/trailing whitespace from a string column"
+  },
+  "uppercase": {
+    "prefix": "uppercase",
+    "body": ["uppercase ${1:column}"],
+    "description": "Convert a column to uppercase"
+  },
+  "lowercase": {
+    "prefix": "lowercase",
+    "body": ["lowercase ${1:column}"],
+    "description": "Convert a column to lowercase"
+  },
+  "cast": {
+    "prefix": "cast",
+    "body": ["cast ${1:column} ${2|int,float,str,datetime,bool|}"],
+    "description": "Cast a column to a different type"
+  },
+  "replace": {
+    "prefix": "replace",
+    "body": ["replace ${1:column} \"${2:old_value}\" \"${3:new_value}\""],
+    "description": "Replace occurrences of a value in a column"
+  },
+  "pivot": {
+    "prefix": "pivot",
+    "body": ["pivot index=${1:row_col} column=${2:col_col} value=${3:val_col}"],
+    "description": "Reshape data from long to wide format"
+  },
+  "sum": {
+    "prefix": "sum",
+    "body": ["sum ${1:column}"],
+    "description": "Sum a numeric column (per group or total)"
+  },
+  "avg": {
+    "prefix": "avg",
+    "body": ["avg ${1:column}"],
+    "description": "Average of a numeric column (per group or total)"
+  },
+  "min": {
+    "prefix": "min",
+    "body": ["min ${1:column}"],
+    "description": "Minimum value of a column (per group or total)"
+  },
+  "max": {
+    "prefix": "max",
+    "body": ["max ${1:column}"],
+    "description": "Maximum value of a column (per group or total)"
+  },
+  "agg": {
+    "prefix": "agg",
+    "body": ["agg ${1|sum,avg,min,max|} ${2:column}, ${3|sum,avg,min,max,count|} ${4:column}"],
+    "description": "Multiple aggregations at once after a group by"
+  },
+  "join": {
+    "prefix": "join",
+    "body": ["join \"${1:data/other.csv}\" on ${2:id}"],
+    "description": "Inner-join with another CSV on a key column"
+  },
+  "merge": {
+    "prefix": "merge",
+    "body": ["merge \"${1:data/extra.csv}\""],
+    "description": "Append rows from another CSV file (union)"
+  },
+  "foreach": {
+    "prefix": "foreach",
+    "body": ["foreach \"${1:data/monthly/*.csv}\""],
+    "description": "Load and concatenate all CSVs matching a glob pattern"
+  },
+  "include": {
+    "prefix": "include",
+    "body": ["include \"${1:pipelines/shared/clean.ppl}\""],
+    "description": "Include and execute another pipeline file"
+  },
+  "print": {
+    "prefix": "print",
+    "body": ["print"],
+    "description": "Print the current DataFrame to stdout"
+  },
+  "schema": {
+    "prefix": "schema",
+    "body": ["schema"],
+    "description": "Print column names and data types"
+  },
+  "inspect": {
+    "prefix": "inspect",
+    "body": ["inspect"],
+    "description": "Print column names, types, null counts and unique counts"
+  },
+  "head": {
+    "prefix": "head",
+    "body": ["head ${1:10}"],
+    "description": "Print the first N rows to stdout"
+  },
+  "log": {
+    "prefix": "log",
+    "body": ["log \"${1:message}\""],
+    "description": "Print a message to the terminal during execution"
+  },
+  "assert": {
+    "prefix": "assert",
+    "body": ["assert ${1:column} ${2:>} ${3:value}"],
+    "description": "Fail the pipeline if any row violates the condition"
+  },
+  "fill strategy": {
+    "prefix": "fill",
+    "body": ["fill ${1:column} ${2|mean,median,mode,forward,backward,drop|}"],
+    "description": "Fill missing values using a strategy"
+  },
+  "fill value": {
+    "prefix": "fillval",
+    "body": ["fill ${1:column} \"${2:default}\""],
+    "description": "Fill missing values with a literal value"
+  },
+  "set": {
+    "prefix": "set",
+    "body": ["set ${1:name} = ${2:value}"],
+    "description": "Set a named variable referenceable as $name"
+  },
+  "env": {
+    "prefix": "env",
+    "body": ["env ${1:VAR_NAME}"],
+    "description": "Load an OS environment variable into the pipeline variable store"
+  }
+}

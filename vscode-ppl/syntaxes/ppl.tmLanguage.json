@@ -6,6 +6,7 @@
   "patterns": [
     { "include": "#comments"  },
     { "include": "#keywords"  },
+    { "include": "#variables" },
     { "include": "#strings"   },
     { "include": "#operators" },
     { "include": "#numbers"   }
@@ -18,26 +19,38 @@
     "keywords": {
       "patterns": [
         {
-          "match": "\\b(source|save|merge|join|on)\\b",
+          "match": "\\b(source|save|merge|join|on|foreach|include)\\b",
           "name": "keyword.control.io.ppl"
         },
         {
-          "match": "\\b(filter|select|group|by|count|sort|rename|add|drop|limit|distinct)\\b",
+          "match": "\\b(filter|where|select|group|by|count|sort|rename|add|drop|limit|distinct|sample|trim|uppercase|lowercase|cast|replace|pivot)\\b",
           "name": "keyword.control.transform.ppl"
         },
         {
-          "match": "\\b(sum|avg|min|max)\\b",
+          "match": "\\b(sum|avg|min|max|agg)\\b",
           "name": "keyword.control.aggregate.ppl"
         },
         {
-          "match": "\\b(print|schema|inspect|head|assert|fill)\\b",
+          "match": "\\b(print|schema|inspect|head|assert|fill|log|set|env)\\b",
           "name": "keyword.control.inspect.ppl"
         },
         {
-          "match": "\\b(asc|desc|mean|median|mode|forward|backward)\\b",
+          "match": "\\b(if|then|else|and|or)\\b",
+          "name": "keyword.control.logic.ppl"
+        },
+        {
+          "match": "\\b(asc|desc|mean|median|mode|forward|backward|drop)\\b",
           "name": "keyword.other.modifier.ppl"
+        },
+        {
+          "match": "\\b(int|float|str|datetime|bool)\\b",
+          "name": "support.type.ppl"
         }
       ]
+    },
+    "variables": {
+      "match": "\\$\\w+",
+      "name": "variable.other.ppl"
     },
     "strings": {
       "name": "string.quoted.double.ppl",
@@ -51,7 +64,7 @@
       ]
     },
     "operators": {
-      "match": "(>=|<=|!=|==|>|<|=|\\*|\/|\\+|-)",
+      "match": "(>=|<=|!=|==|>|<|=|\\*|\\/|\\+|-|%)",
       "name": "keyword.operator.ppl"
     },
     "numbers": {
