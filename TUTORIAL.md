@@ -21,7 +21,7 @@
 12. [Saving Output — `save`](#12-saving-output--save)
 13. [Comments & Best Practices](#13-comments--best-practices)
 14. [Capstone Project](#14-capstone-project)
-15. [Feature Suggestions](#15-feature-suggestions)
+15. [Advanced Features](#15-advanced-features)
 16. [Quick Reference Card](#16-quick-reference-card)
 
 ---
@@ -729,153 +729,147 @@ ppl tutorials/09_capstone.ppl
 
 ---
 
-## 15. Feature Suggestions
+## 15. Advanced Features
 
-Here are ideas for features that would make Pipeline DSL significantly more powerful.
-They're grouped from easiest to most ambitious.
-
----
-
-### Tier 1 — Easy Wins
-
-**`sample N` / `sample N%`**
-Take a random sample of rows. Essential for working with large files.
-
-```
-source "data/huge_file.csv"
-sample 1000        # random 1000 rows
-sample 10%         # random 10% of rows
-```
-
-**`uppercase` / `lowercase` / `trim`**
-String normalization commands for text columns. Dirty strings are extremely
-common in real data.
-
-```
-trim country        # remove leading/trailing whitespace
-uppercase country   # "germany" → "GERMANY"
-lowercase name      # "ALICE" → "alice"
-```
-
-**`cast <column> <type>`**
-Explicit type conversion. Useful when CSVs load numbers as strings.
-
-```
-cast age int
-cast salary float
-cast date datetime
-```
-
-**`count if <condition>`**
-Count rows matching a condition without filtering the dataset.
-
-```
-count if salary > 50000
-# Prints a number but doesn't remove any rows
-```
+These features are fully implemented and available today.
 
 ---
 
-### Tier 2 — Medium Impact
+### Parquet files
 
-**`where` as an alias for `filter`**
-Many users coming from SQL will instinctively write `where`. Supporting both
-keywords reduces the learning curve.
+Pipeline DSL can read **and** write Parquet files in addition to CSV and JSON.
+Parquet is a columnar format that is faster and more compact than CSV for large
+datasets and preserves column data types exactly.
 
+**Reading:**
 ```
-where age >= 18    # same as: filter age >= 18
-```
-
-**Multi-condition `filter` with `and` / `or`**
-Currently filters must be chained across multiple lines. Single-line compound
-conditions would be much more expressive.
-
-```
-filter age >= 18 and country == "Germany"
-filter salary > 50000 or country == "USA"
+source "data/snapshot.parquet"
 ```
 
-**`replace <column> <old_value> <new_value>`**
-Find-and-replace for column values. Useful for fixing data inconsistencies.
-
+**Writing:**
 ```
-replace country "Germ" "Germany"
-replace status "active" "Active"
+save "output/results.parquet"
 ```
 
-**`if <condition> then <column> = <value> else <value>`**
-Conditional column assignment — similar to `CASE WHEN` in SQL or `np.where`.
+You can freely mix formats in one pipeline — read a Parquet snapshot, filter
+it, then save the result as both CSV and JSON.
 
 ```
-add tier = if salary > 80000 then "senior" else "junior"
-```
-
-**`pivot`**
-Reshape data from long to wide format. A very common data transformation.
-
-```
-pivot index=country column=year value=revenue
-```
-
----
-
-### Tier 3 — Power Features
-
-**Variables / `set`**
-Allow named values to be defined once and reused.
-
-```
-set threshold = 50000
-filter salary > $threshold
-add above_threshold = salary - $threshold
-```
-
-**Multiple aggregations in one `group by` block**
-Right now each `group by` only supports one aggregation. Allow several at once:
-
-```
-group by country
-  sum salary
-  avg age
-  count
-```
-
-**`foreach <file_pattern>` — batch processing**
-Run the same pipeline over multiple files at once.
-
-```
-foreach "data/monthly/*.csv"
-  filter status == "completed"
-  save "output/{filename}_cleaned.csv"
-```
-
-**`log <message>`**
-Print a custom message to the terminal during pipeline execution — great for
-debugging long pipelines.
-
-```
-source "data/people.csv"
-log "Loaded people data"
+source "data/snapshot.parquet"
 filter age >= 18
-log "Filtered to adults"
+save "output/adults.csv"
+save "output/adults.json"
 ```
 
-**`env <VAR>`**
-Read values from environment variables, so secrets (like file paths or
-credentials) don't have to be hardcoded in `.ppl` files.
+---
+
+### Chunked streaming — `source ... chunk N`
+
+For very large CSV files that might not fit in memory, add `chunk N` to the
+`source` command. The pipeline reads the file N rows at a time.
+
+Row-safe operations (`filter`, `select`, `cast`, `rename`, `add`, `uppercase`,
+etc.) are applied to each chunk before the results are concatenated, keeping peak
+memory well below the full file size.
 
 ```
-source env DATA_PATH
+source "data/big.csv" chunk 100000
+filter status == "active"
+select name, salary
 ```
 
-**Pipeline `import` / `include`**
-Reuse common pipeline logic across multiple files — like a shared "clean data"
-step.
+All other commands (sort, group by, aggregations) run after the chunks have been
+concatenated and work exactly as normal.
+
+---
+
+### Join types — `inner`, `left`, `right`, `outer`
+
+`join` defaults to an inner join. Add a join type keyword as the last token to
+choose a different behaviour:
+
+| Keyword | Keeps |
+|---------|-------|
+| `inner` (default) | Only rows that match in both files |
+| `left` | All rows from the left side; nulls for unmatched right rows |
+| `right` | All rows from the right side; nulls for unmatched left rows |
+| `outer` | All rows from both sides; nulls wherever a match is missing |
 
 ```
-include "pipelines/shared/clean_input.ppl"
-filter salary > 50000
+# left join: keep every employee even if they have no department record
+source "data/employees.csv"
+join "data/departments.csv" on dept_id left
+print
 ```
+
+---
+
+### Sandbox mode — `set sandbox = <dir>`
+
+When a pipeline will be distributed or run in a shared environment, you can
+limit all file I/O to a specific directory tree by setting the `sandbox`
+variable. Any `source`, `save`, or `join` that tries to access a path outside
+that directory will raise a `PermissionError` immediately.
+
+```
+set sandbox = data/safe_zone
+source "data/safe_zone/people.csv"   # allowed
+source "data/other/secret.csv"       # blocked: outside sandbox
+```
+
+This prevents pipelines from accidentally (or intentionally) reading or writing
+files that should be off-limits.
+
+---
+
+### Error recovery — `try` / `on_error`
+
+By default, any error inside a pipeline stops everything. `try` lets you catch
+errors and decide what to do: skip them, log a message, or run a recovery command.
+
+**Syntax:**
+```
+try
+    <one or more commands>
+on_error <action>
+```
+
+**Available actions:**
+
+| Action | Effect |
+|--------|--------|
+| `skip` | Silently continue |
+| `log "message"` | Print the message, then continue |
+| any command | Run that command (e.g. `fill salary 0`) then continue |
+
+**Examples:**
+
+```
+# Assert might fail on messy input — skip and carry on
+source "data/people.csv"
+try
+    assert salary > 0
+on_error skip
+
+# Log a warning when a cast fails (e.g. non-numeric value in column)
+try
+    cast ts datetime
+on_error log "timestamp parse failed — defaulting to null"
+
+# Run a fill command to recover from a failed assertion
+try
+    assert age > 0
+on_error fill age 0
+
+# Nested try blocks
+try
+    try
+        assert salary > 0
+    on_error fill salary 0
+on_error skip
+```
+
+If the commands inside `try` succeed, the `on_error` handler is never called.
 
 ---
 
@@ -884,8 +878,13 @@ filter salary > 50000
 ```
 # ── LOADING ──────────────────────────────────────
 source "file.csv"              # load CSV
-join "other.csv" on column     # inner join on key column
+source "file.parquet"          # load Parquet
+source "file.csv" chunk N      # chunked streaming for large files
+join "other.csv" on column     # inner join (default)
+join "other.csv" on column left  # left / right / outer also supported
 merge "other.csv"              # append rows (stack vertically)
+foreach "data/monthly/*.csv"   # load and concatenate all matching files
+include "file.ppl"             # execute another pipeline inline
 
 # ── INSPECTING ───────────────────────────────────
 schema                         # column names + types
@@ -895,8 +894,12 @@ print                          # print all rows
 
 # ── FILTERING ────────────────────────────────────
 filter col > value             # operators: > < >= <= == !=
+filter col > v1 and col2 == v2 # compound conditions
+where col > value              # SQL-friendly alias for filter
 distinct                       # remove duplicate rows
 limit N                        # keep first N rows
+sample N                       # random N rows
+sample N%                      # random N% of rows
 
 # ── COLUMNS ──────────────────────────────────────
 select col1, col2              # keep only these columns
@@ -905,8 +908,15 @@ rename old new                 # rename a column
 
 # ── TRANSFORMING ─────────────────────────────────
 add col = expr                 # new computed column (+ - * /)
+add col = if cond then v else v  # conditional column
 sort by col asc                # sort (asc default, or desc)
 sort by col1 asc, col2 desc    # multi-column sort
+trim col                       # strip whitespace
+uppercase col                  # to uppercase
+lowercase col                  # to lowercase
+cast col int                   # types: int float str datetime bool
+replace col "old" "new"        # find-and-replace in a column
+pivot index=c column=c value=c # long → wide reshape
 
 # ── MISSING VALUES ───────────────────────────────
 fill col mean                  # strategies: mean median mode
@@ -916,17 +926,29 @@ fill col "literal"             # or a literal value
 # ── AGGREGATION ──────────────────────────────────
 group by col1, col2            # group (must be followed by agg)
 count                          # count rows / group sizes
+count if col > value           # count without filtering
 sum col                        # sum of column
 avg col                        # average of column
 min col                        # minimum value
 max col                        # maximum value
+agg sum col, avg col, count    # multiple aggregations at once
 
-# ── QUALITY ──────────────────────────────────────
+# ── QUALITY & ERROR RECOVERY ─────────────────────
 assert col > value             # fail pipeline if condition broken
+try                            # catch errors from enclosed commands
+    <commands>
+on_error skip                  # skip | log "msg" | any command
 
 # ── OUTPUT ───────────────────────────────────────
 save "file.csv"                # save as CSV
 save "file.json"               # save as JSON
+save "file.parquet"            # save as Parquet
+
+# ── VARIABLES ────────────────────────────────────
+set name = value               # define $name
+set sandbox = /safe/dir        # restrict all file I/O to this tree
+env VAR_NAME                   # load OS env var into $VAR_NAME
+log "message with $var"        # print during execution
 
 # ── COMMENTS ─────────────────────────────────────
 # anything after # is ignored

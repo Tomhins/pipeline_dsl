@@ -69,15 +69,21 @@ Pipeline files should be placed in the `pipelines/` folder by convention, but an
 ## Commands
 
 ### `source`
-Load a CSV file into the pipeline.
+Load a CSV, JSON, or Parquet file into the pipeline.
 ```
 source "data/people.csv"
+source "data/snapshot.parquet"
 ```
 
 Supports `$variable` references in the file path:
 ```
 set path = data/people.csv
 source "$path"
+```
+
+**Chunked streaming** — for large files, read in fixed-size chunks to reduce peak memory usage. Row-safe operations (`filter`, `select`, `cast`, `rename`, etc.) are applied per chunk before the results are concatenated:
+```
+source "data/big.csv" chunk 100000
 ```
 
 ### `filter`
@@ -251,10 +257,20 @@ include "pipelines/shared/clean.ppl"
 ## Data Joining
 
 ### `join`
-Inner-join with another CSV on a shared key column.
+Join with another CSV on a shared key column. The join type defaults to `inner`;
+use `left`, `right`, or `outer` to change it.
 ```
 join "data/departments.csv" on dept_id
+join "data/departments.csv" on dept_id left
+join "data/departments.csv" on dept_id outer
 ```
+
+| Type | Behaviour |
+|---|---|
+| `inner` (default) | Only rows with matching keys in both files |
+| `left` | All rows from the left side; nulls for unmatched right rows |
+| `right` | All rows from the right side; nulls for unmatched left rows |
+| `outer` | All rows from both sides; nulls wherever a match is missing |
 
 ### `merge`
 Append rows from another CSV file (union/stack — columns are matched by name).
@@ -328,10 +344,11 @@ pivot index=country column=year value=revenue
 ## Output
 
 ### `save`
-Write the current data to a CSV or JSON file. Output directories are created automatically.
+Write the current data to a CSV, JSON, or Parquet file. Output directories are created automatically.
 ```
 save "output/results.csv"
 save "output/results.json"
+save "output/results.parquet"
 ```
 
 ### `print`
@@ -419,6 +436,13 @@ log "Processing $label data"
 source "$input_path"
 ```
 
+**Sandbox mode** — restrict all file I/O to a specific directory tree. Any `source`, `save`, or `join` that tries to access a path outside this directory will fail with a `PermissionError`.
+```
+set sandbox = data/safe_zone
+source "data/safe_zone/people.csv"   # allowed
+source "data/other/secret.csv"       # blocked — outside sandbox
+```
+
 ### `env`
 Load an OS environment variable into the pipeline variable store.
 ```
@@ -429,6 +453,41 @@ Then use it:
 ```
 source $DATA_PATH
 ```
+
+---
+
+## Error Recovery
+
+### `try` / `on_error`
+Wrap one or more commands in a `try` block. If any command inside the block raises an error, execution jumps to the `on_error` handler instead of stopping the entire pipeline.
+
+```
+try
+    assert age > 0
+on_error skip
+```
+
+The `on_error` handler can be:
+
+| Handler | Effect |
+|---|---|
+| `skip` | Silently swallow the error and continue |
+| `log "message"` | Print a message and continue |
+| any command | Execute that command (e.g. `fill age 0`) and continue |
+
+```
+# Log the error and carry on
+try
+    cast ts datetime
+on_error log "timestamp parse failed — skipping column"
+
+# Run a recovery command when the block fails
+try
+    assert salary > 0
+on_error fill salary 0
+```
+
+`try` blocks can be nested.
 
 ---
 
@@ -499,6 +558,8 @@ The DSL provides clear error messages for common mistakes:
 | Join key not found | `[JoinNode] join: key 'id' not in current data. Available: [...]` |
 | Undefined variable | `[SourceNode] variable '$path' is not defined. Use 'set path = <value>' first.` |
 | No files matched glob | `[ForeachNode] foreach: no files matched pattern 'data/monthly/*.csv'` |
+| Sandbox violation | `PermissionError: Access denied: 'data/other.csv' is outside the sandbox` |
+| try / assert failure | Caught by `on_error` handler — pipeline continues |
 
 ---
 
@@ -510,7 +571,7 @@ The `vscode-ppl/` folder contains a VS Code extension that adds syntax highlight
 ```powershell
 cd vscode-ppl
 "y" | vsce package --no-dependencies
-code --install-extension vscode-ppl-0.8.0.vsix
+code --install-extension vscode-ppl-1.0.0.vsix
 ```
 Then reload VS Code (`Ctrl+Shift+P` → `Developer: Reload Window`).
 

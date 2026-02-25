@@ -35,11 +35,15 @@
           "name": "keyword.control.inspect.ppl"
         },
         {
+          "match": "\\b(try|on_error|skip)\\b",
+          "name": "keyword.control.error.ppl"
+        },
+        {
           "match": "\\b(if|then|else|and|or)\\b",
           "name": "keyword.control.logic.ppl"
         },
         {
-          "match": "\\b(asc|desc|mean|median|mode|forward|backward|drop)\\b",
+          "match": "\\b(asc|desc|mean|median|mode|forward|backward|drop|inner|left|right|outer|chunk)\\b",
           "name": "keyword.other.modifier.ppl"
         },
         {

@@ -4,6 +4,51 @@
     "body": ["source \"${1:data/file.csv}\""],
     "description": "Load a CSV file into the pipeline"
   },
+  "source parquet": {
+    "prefix": "sourceparquet",
+    "body": ["source \"${1:data/file.parquet}\""],
+    "description": "Load a Parquet file into the pipeline"
+  },
+  "source chunk": {
+    "prefix": "sourcechunk",
+    "body": ["source \"${1:data/file.csv}\" chunk ${2:100000}"],
+    "description": "Load a large CSV in fixed-size chunks to reduce memory usage"
+  },
+  "save parquet": {
+    "prefix": "saveparquet",
+    "body": ["save \"${1:output/results.parquet}\""],
+    "description": "Save the current DataFrame to a Parquet file"
+  },
+  "join left": {
+    "prefix": "joinleft",
+    "body": ["join \"${1:data/other.csv}\" on ${2:id} left"],
+    "description": "Left join — keeps all rows from the left side"
+  },
+  "join outer": {
+    "prefix": "joinouter",
+    "body": ["join \"${1:data/other.csv}\" on ${2:id} outer"],
+    "description": "Outer join — keeps all rows from both sides"
+  },
+  "try on_error skip": {
+    "prefix": "try",
+    "body": ["try", "    ${1:assert ${2:column} ${3:>} ${4:value}}", "on_error skip"],
+    "description": "Wrap commands in a try block — skip on error"
+  },
+  "try on_error log": {
+    "prefix": "trylog",
+    "body": ["try", "    ${1:assert ${2:column} ${3:>} ${4:value}}", "on_error log \"${5:error message}\""],
+    "description": "Wrap commands in a try block — log a message on error"
+  },
+  "try on_error command": {
+    "prefix": "tryfill",
+    "body": ["try", "    ${1:assert ${2:column} ${3:>} ${4:value}}", "on_error ${5:fill ${2:column} ${6:0}}"],
+    "description": "Wrap commands in a try block — run a recovery command on error"
+  },
+  "set sandbox": {
+    "prefix": "sandbox",
+    "body": ["set sandbox = ${1:data/safe_dir}"],
+    "description": "Restrict all file I/O to a directory sandbox"
+  },
   "save csv": {
     "prefix": "save",
     "body": ["save \"${1:output/results.csv}\""],

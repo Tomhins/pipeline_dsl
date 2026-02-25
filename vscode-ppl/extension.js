@@ -5,10 +5,10 @@ const path = require('path');
 // Command documentation — used by the hover provider
 // ---------------------------------------------------------------------------
 const COMMAND_DOCS = {
-    source:    '`source "file.csv"`\n\nLoad a CSV file into the pipeline.',
-    save:      '`save "file.csv|json"`\n\nWrite the current DataFrame to a CSV or JSON file.',
+    source:    '`source "file.csv"`\n\nLoad a CSV, JSON, or Parquet file into the pipeline.\n\nOptional chunked streaming for large files:\n`source "file.csv" chunk 100000`\n\nRow-safe operations are applied per chunk to reduce peak memory usage.',
+    save:      '`save "file.csv|json|parquet"`\n\nWrite the current DataFrame to a CSV, JSON, or Parquet file. Output directories are created automatically.',
     merge:     '`merge "file.csv"`\n\nAppend rows from another CSV file (union / stack).',
-    join:      '`join "file.csv" on <column>`\n\nInner-join with another CSV on a key column.',
+    join:      '`join "file.csv" on <column> [inner|left|right|outer]`\n\nJoin with another CSV on a key column. Type defaults to `inner`.\n\n| Type | Behaviour |\n|---|---|\n| `inner` | Only matching rows (default) |\n| `left` | All left rows; nulls for unmatched right |\n| `right` | All right rows; nulls for unmatched left |\n| `outer` | All rows from both sides |\n\nExample: `join "data/depts.csv" on dept_id left`',
     foreach:   '`foreach "glob/pattern/*.csv"`\n\nLoad and concatenate all CSVs matching a glob pattern.',
     include:   '`include "file.ppl"`\n\nInclude and execute another pipeline file inline.',
     filter:    '`filter <col> <op> <value>`\n\nFilter rows by a condition. Supports `and`/`or` on one line.\n\nOperators: `>` `<` `>=` `<=` `==` `!=`',
@@ -41,8 +41,16 @@ const COMMAND_DOCS = {
     log:       '`log <message>`\n\nPrint a message to the terminal during execution.',
     assert:    '`assert <col> <op> <value>`\n\nFail the pipeline if any row violates the condition.',
     fill:      '`fill <column> <strategy|value>`\n\nFill missing values.\n\nStrategies: `mean` `median` `mode` `forward` `backward` `drop`\nOr supply a literal value: `fill country "Unknown"`',
-    set:       '`set <name> = <value>`\n\nSet a named variable referenceable as `$name` in other commands.',
+    set:       '`set <name> = <value>`\n\nSet a named variable referenceable as `$name` in other commands.\n\nSpecial: `set sandbox = <dir>` restricts all file I/O to that directory tree.',
     env:       '`env <VAR_NAME>`\n\nLoad an OS environment variable into the pipeline variable store.',
+    try:       '`try` / `on_error <action>`\n\nWrap commands in a `try` block. If any command fails, the `on_error` handler runs instead of stopping the pipeline.\n\nActions: `skip` | `log "message"` | any pipeline command\n\n```\ntry\n    assert salary > 0\non_error fill salary 0\n```',
+    on_error:  '`on_error <action>`\n\nError handler for a `try` block. Actions: `skip`, `log "message"`, or any pipeline command.',
+    skip:      'Used with `on_error skip` to silently swallow errors from a `try` block.',
+    chunk:     'Used with `source` to enable chunked streaming: `source "file.csv" chunk 100000`',
+    inner:     'Join type: only rows with matching keys in both files (default for `join`).',
+    left:      'Join type: all left rows; nulls for unmatched right rows.',
+    right:     'Join type: all right rows; nulls for unmatched left rows.',
+    outer:     'Join type: all rows from both sides; nulls where a match is missing.',
     // modifiers / keywords
     by:        'Used with `group by` and `sort by`.',
     on:        'Used with `join … on <column>`.',
