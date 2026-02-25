@@ -1,9 +1,46 @@
-# Example pipeline: adults grouped by country with a headcount.
-# Run with: python main.py pipelines/example.ppl
+# Example pipeline: tests all new commands.
+# Run with: ppl pipelines/example.ppl
 
 source "../data/people.csv"
-filter age > 18
-select name, age, country
+
+# --- Inspection ---
+inspect
+
+# --- Fill missing values ---
+fill age mean
+fill country "Unknown"
+
+# --- Data transformation ---
+rename salary income
+add tax = income * 0.2
+add seniority = age - 30
+drop seniority
+filter income > 50000
+distinct
+
+# --- Sorting & limiting ---
+sort by age desc, name asc
+limit 10
+head 5
+
+# --- Aggregation ---
+schema
+
 group by country
-count
-save "../output/adults_by_country.csv"
+sum income
+
+sort by country asc
+
+# --- Output ---
+print
+save "../output/test_features.csv"
+save "../output/test_features.json"
+
+# --- Quality check on raw data ---
+# assert catches 3 minors with salary = 0 (expected to fail — demonstrates validation)
+source "../data/people.csv"
+assert age > 0
+
+# assert on adults only — all must have salary > 0
+filter age >= 18
+assert salary > 0
