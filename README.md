@@ -213,3 +213,13 @@ To produce a `ppl.exe` that works on any Windows machine with no Python installe
 ```
 
 Copy `dist\ppl.exe` to any folder on your PATH and the `ppl` command works everywhere.
+
+---
+
+## License
+
+Copyright (c) 2026. All rights reserved.
+
+This project and its source code are proprietary. You may view the source code
+but may not use, copy, modify, or distribute it without the author's explicit
+written permission. See [LICENSE](LICENSE) for details.
