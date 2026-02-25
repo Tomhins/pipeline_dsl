@@ -74,13 +74,38 @@ Load a CSV file into the pipeline.
 source "data/people.csv"
 ```
 
+Supports `$variable` references in the file path:
+```
+set path = data/people.csv
+source "$path"
+```
+
 ### `filter`
-Filter rows by a column condition.  
+Filter rows by a column condition.
 Supported operators: `>`, `<`, `>=`, `<=`, `==`, `!=`
 ```
 filter age > 18
 filter country == "Germany"
 filter salary != 0
+```
+
+Supports `$variable` references in the value:
+```
+set threshold = 50000
+filter salary > $threshold
+```
+
+Compound conditions using `and` / `or` on a single line:
+```
+filter age >= 18 and country == "Germany"
+filter status == "active" or status == "pending"
+```
+
+### `where`
+Alias for `filter`. Useful for SQL-style readability.
+```
+where age > 18
+where country == "Germany"
 ```
 
 ### `select`
@@ -90,17 +115,24 @@ select name, age, country
 ```
 
 ### `group by`
-Group rows by one or more columns. Must be followed by an aggregation command (`count`, `sum`, `avg`, `min`, `max`).
+Group rows by one or more columns. Must be followed by an aggregation command (`count`, `sum`, `avg`, `min`, `max`, or `agg`).
 ```
 group by country
 group by country, age
 ```
 
 ### `count`
-Count rows. When preceded by `group by`, counts per group.  
+Count rows. When preceded by `group by`, counts per group.
 Without grouping, returns the total row count.
 ```
 count
+```
+
+### `count if`
+Print the count of rows matching a condition without modifying the pipeline data.
+```
+count if salary > 50000
+count if country == "Germany"
 ```
 
 ### `sort by`
@@ -124,6 +156,18 @@ add tax = price * 0.2
 add full_salary = salary + bonus
 ```
 
+Supports `$variable` substitution in the expression:
+```
+set rate = 0.2
+add tax = price * $rate
+```
+
+Conditional form using `if / then / else`:
+```
+add tier = if salary > 80000 then "senior" else "junior"
+add label = if score >= 50 then "pass" else "fail"
+```
+
 ### `drop`
 Remove one or more columns (comma-separated).
 ```
@@ -140,6 +184,13 @@ limit 100
 Remove duplicate rows.
 ```
 distinct
+```
+
+### `sample`
+Take a random sample of rows — either a fixed count or a percentage.
+```
+sample 100
+sample 10%
 ```
 
 ---
@@ -170,6 +221,31 @@ group by country
 max salary
 ```
 
+### `agg`
+Apply multiple aggregations at once after a `group by`.
+```
+group by country
+agg sum salary, avg age, count
+```
+
+Supported verbs inside `agg`: `sum`, `avg`, `min`, `max`, `count`.
+
+---
+
+## Multi-file Loading
+
+### `foreach`
+Load and concatenate all CSV files matching a glob pattern. The result is the row-wise union of all matched files.
+```
+foreach "data/monthly/*.csv"
+```
+
+### `include`
+Include and execute another `.ppl` file, sharing the current context. Useful for reusable pipeline fragments.
+```
+include "pipelines/shared/clean.ppl"
+```
+
 ---
 
 ## Data Joining
@@ -188,6 +264,67 @@ merge "data/extra_people.csv"
 
 ---
 
+## String Transforms
+
+### `trim`
+Strip leading and trailing whitespace from a string column.
+```
+trim country
+```
+
+### `uppercase`
+Convert a string column to uppercase.
+```
+uppercase country
+```
+
+### `lowercase`
+Convert a string column to lowercase.
+```
+lowercase email
+```
+
+---
+
+## Type Conversion
+
+### `cast`
+Cast a column to a different data type.
+
+| Type keyword | Result |
+|---|---|
+| `int` / `integer` | Nullable integer |
+| `float` / `double` | Float |
+| `str` / `string` / `text` | String |
+| `datetime` / `date` | Datetime |
+| `bool` / `boolean` | Boolean |
+
+```
+cast age int
+cast score float
+cast ts datetime
+cast active bool
+```
+
+---
+
+## Data Reshaping
+
+### `replace`
+Replace occurrences of a value in a column.
+```
+replace country "Germany" "DE"
+replace status active completed
+```
+
+### `pivot`
+Reshape data from long to wide format.
+```
+pivot index=country column=year value=revenue
+```
+
+---
+
 ## Output
 
 ### `save`
@@ -201,6 +338,13 @@ save "output/results.json"
 Print the current data to the terminal without saving.
 ```
 print
+```
+
+### `log`
+Print a message to the terminal during pipeline execution. Supports `$variable` substitution.
+```
+log "Processing complete"
+log "Loaded data for $label"
 ```
 
 ---
@@ -255,6 +399,35 @@ fill country "Unknown"
 fill salary 0
 fill score forward
 fill status drop
+```
+
+---
+
+## Variables
+
+### `set`
+Set a named variable, referenceable as `$name` in other commands.
+```
+set threshold = 50000
+set label = "Europe"
+```
+
+Then use it in any command that supports variable references:
+```
+filter salary > $threshold
+log "Processing $label data"
+source "$input_path"
+```
+
+### `env`
+Load an OS environment variable into the pipeline variable store.
+```
+env DATA_PATH
+```
+
+Then use it:
+```
+source $DATA_PATH
 ```
 
 ---
@@ -317,13 +490,15 @@ The DSL provides clear error messages for common mistakes:
 | Problem | Example message |
 |---|---|
 | File not found | `[SourceNode] Source file not found: 'data/missing.csv'` |
-| Unknown column | `[FilterNode] column 'agee' not found. Available: ['name', 'age', ...]` |
+| Unknown column | `[FilterNode] filter: column 'agee' not found. Available: ['name', 'age', ...]` |
 | Invalid command | `Line 3: unknown command 'sortby'. Supported commands: add, assert, avg, ...` |
 | Missing `.ppl` extension | `Expected a .ppl file, got: 'data.csv'` |
 | Bad filter syntax | `Line 2: could not parse 'filter' condition 'age'. Expected: filter <column> <op> <value>` |
 | Assert failure | `[AssertNode] assert: 3 row(s) failed condition 'age > 0'` |
 | Bad expression in `add` | `[AddNode] add: could not evaluate expression 'agee * 2': ...` |
 | Join key not found | `[JoinNode] join: key 'id' not in current data. Available: [...]` |
+| Undefined variable | `[SourceNode] variable '$path' is not defined. Use 'set path = <value>' first.` |
+| No files matched glob | `[ForeachNode] foreach: no files matched pattern 'data/monthly/*.csv'` |
 
 ---
 
