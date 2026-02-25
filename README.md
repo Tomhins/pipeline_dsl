@@ -90,7 +90,7 @@ select name, age, country
 ```
 
 ### `group by`
-Group rows by one or more columns. Must be followed by `count`.
+Group rows by one or more columns. Must be followed by an aggregation command (`count`, `sum`, `avg`, `min`, `max`).
 ```
 group by country
 group by country, age
@@ -103,10 +103,158 @@ Without grouping, returns the total row count.
 count
 ```
 
+### `sort by`
+Sort rows by one or more columns. Direction defaults to `asc`.
+```
+sort by age
+sort by age desc
+sort by country asc, age desc
+```
+
+### `rename`
+Rename a column.
+```
+rename old_name new_name
+```
+
+### `add`
+Add a computed column using an arithmetic expression. Column names are referenced directly.
+```
+add tax = price * 0.2
+add full_salary = salary + bonus
+```
+
+### `drop`
+Remove one or more columns (comma-separated).
+```
+drop salary, department
+```
+
+### `limit`
+Keep only the first *n* rows.
+```
+limit 100
+```
+
+### `distinct`
+Remove duplicate rows.
+```
+distinct
+```
+
+---
+
+## Aggregation
+
+Each aggregation command works standalone (returns a single-row result) or after `group by` (returns one row per group).
+
+### `sum`
+```
+sum salary
+group by country
+sum salary
+```
+
+### `avg`
+```
+avg age
+group by country
+avg salary
+```
+
+### `min` / `max`
+```
+min age
+max salary
+group by country
+max salary
+```
+
+---
+
+## Data Joining
+
+### `join`
+Inner-join with another CSV on a shared key column.
+```
+join "data/departments.csv" on dept_id
+```
+
+### `merge`
+Append rows from another CSV file (union/stack — columns are matched by name).
+```
+merge "data/extra_people.csv"
+```
+
+---
+
+## Output
+
 ### `save`
-Write the current data to a CSV file. Output directories are created automatically.
+Write the current data to a CSV or JSON file. Output directories are created automatically.
 ```
 save "output/results.csv"
+save "output/results.json"
+```
+
+### `print`
+Print the current data to the terminal without saving.
+```
+print
+```
+
+---
+
+## Inspection
+
+### `schema`
+Print column names and data types.
+```
+schema
+```
+
+### `inspect`
+Print column names, types, null counts, and unique value counts.
+```
+inspect
+```
+
+### `head`
+Print the first *n* rows to the terminal without modifying pipeline data.
+```
+head 10
+```
+
+---
+
+## Quality / Validation
+
+### `assert`
+Fail the pipeline if any row violates a condition. Uses the same operators as `filter`.
+```
+assert age > 0
+assert salary != 0
+```
+
+### `fill`
+Fill missing or empty values in a column.
+
+| Strategy | Description |
+|---|---|
+| `mean` | Fill with column average (numeric) |
+| `median` | Fill with column median (numeric) |
+| `mode` | Fill with most frequent value |
+| `forward` | Copy last non-null value downward |
+| `backward` | Copy next non-null value upward |
+| `drop` | Remove rows where this column is null |
+| `<value>` | Fill with a literal number or string |
+
+```
+fill age mean
+fill country "Unknown"
+fill salary 0
+fill score forward
+fill status drop
 ```
 
 ---
@@ -170,9 +318,12 @@ The DSL provides clear error messages for common mistakes:
 |---|---|
 | File not found | `[SourceNode] Source file not found: 'data/missing.csv'` |
 | Unknown column | `[FilterNode] column 'agee' not found. Available: ['name', 'age', ...]` |
-| Invalid command | `Line 3: unknown command 'sortby'. Supported commands: count, filter, ...` |
+| Invalid command | `Line 3: unknown command 'sortby'. Supported commands: add, assert, avg, ...` |
 | Missing `.ppl` extension | `Expected a .ppl file, got: 'data.csv'` |
 | Bad filter syntax | `Line 2: could not parse 'filter' condition 'age'. Expected: filter <column> <op> <value>` |
+| Assert failure | `[AssertNode] assert: 3 row(s) failed condition 'age > 0'` |
+| Bad expression in `add` | `[AddNode] add: could not evaluate expression 'agee * 2': ...` |
+| Join key not found | `[JoinNode] join: key 'id' not in current data. Available: [...]` |
 
 ---
 
@@ -184,7 +335,7 @@ The `vscode-ppl/` folder contains a VS Code extension that adds syntax highlight
 ```powershell
 cd vscode-ppl
 "y" | vsce package --no-dependencies
-code --install-extension vscode-ppl-0.5.0.vsix
+code --install-extension vscode-ppl-0.8.0.vsix
 ```
 Then reload VS Code (`Ctrl+Shift+P` → `Developer: Reload Window`).
 

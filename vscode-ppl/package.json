@@ -2,7 +2,7 @@
   "name": "vscode-ppl",
   "displayName": "Pipeline DSL",
   "description": "Language support and runner for .ppl pipeline files",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "pipeline-dsl",
   "engines": { "vscode": "^1.75.0" },
   "homepage": "https://github.com/Tomhins/pipeline_dsl#readme",

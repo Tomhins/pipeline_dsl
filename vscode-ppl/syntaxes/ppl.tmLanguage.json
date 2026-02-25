@@ -18,12 +18,24 @@
     "keywords": {
       "patterns": [
         {
-          "match": "\\b(source|save)\\b",
+          "match": "\\b(source|save|merge|join|on)\\b",
           "name": "keyword.control.io.ppl"
         },
         {
-          "match": "\\b(filter|select|group|by|count)\\b",
+          "match": "\\b(filter|select|group|by|count|sort|rename|add|drop|limit|distinct)\\b",
           "name": "keyword.control.transform.ppl"
+        },
+        {
+          "match": "\\b(sum|avg|min|max)\\b",
+          "name": "keyword.control.aggregate.ppl"
+        },
+        {
+          "match": "\\b(print|schema|inspect|head|assert|fill)\\b",
+          "name": "keyword.control.inspect.ppl"
+        },
+        {
+          "match": "\\b(asc|desc|mean|median|mode|forward|backward)\\b",
+          "name": "keyword.other.modifier.ppl"
         }
       ]
     },
@@ -39,8 +51,8 @@
       ]
     },
     "operators": {
-      "match": "(>=|<=|!=|==|>|<)",
-      "name": "keyword.operator.comparison.ppl"
+      "match": "(>=|<=|!=|==|>|<|=|\\*|\/|\\+|-)",
+      "name": "keyword.operator.ppl"
     },
     "numbers": {
       "match": "\\b\\d+(\\.\\d+)?\\b",
