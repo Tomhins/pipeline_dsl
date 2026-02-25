@@ -184,7 +184,7 @@ The `vscode-ppl/` folder contains a VS Code extension that adds syntax highlight
 ```powershell
 cd vscode-ppl
 "y" | vsce package --no-dependencies
-code --install-extension vscode-ppl-0.1.0.vsix
+code --install-extension vscode-ppl-0.5.0.vsix
 ```
 Then reload VS Code (`Ctrl+Shift+P` → `Developer: Reload Window`).
 
