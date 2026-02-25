@@ -1,29 +1,18 @@
 Copyright (c) 2026 Tom Kremser.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated source code (the "Software"), to use, copy,
-and modify the Software for personal or commercial purposes, subject to the
-following conditions:
+This work is licensed under the Creative Commons Attribution-NonCommercial 4.0
+International License (CC BY-NC 4.0).
 
-1. PERMITTED USE
-   You may use the Software to build pipelines, automate workflows, and create
-   data processing solutions for yourself, your employer, or your clients.
-   You may modify the Software to suit your own needs.
+You are free to:
+  - Share — copy and redistribute the material in any medium or format
+  - Adapt — remix, transform, and build upon the material
 
-2. RESTRICTIONS
-   You may NOT sell, sublicense, or commercially redistribute the Software
-   itself — whether in original or modified form — as a standalone product,
-   library, tool, or service. The Software may not be repackaged and offered
-   for sale or licensed to third parties for a fee.
+Under the following terms:
+  - Attribution — You must give appropriate credit to Tom Kremser, provide a
+    link to the license, and indicate if changes were made.
+  - NonCommercial — You may not use the material for commercial purposes.
 
-3. ATTRIBUTION
-   The above copyright notice and this permission notice shall be included in
-   all copies or substantial portions of the Software.
-   If the Software is used as part of a commercial product or service, you must
-   clearly credit the author (Tom Kremser) in your product documentation,
-   about page, or other reasonable location visible to end users.
+No additional restrictions — You may not apply legal terms or technological
+measures that legally restrict others from doing anything the license permits.
 
-4. NO WARRANTY
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR
-   OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
+Full license text: https://creativecommons.org/licenses/by-nc/4.0/legalcode
