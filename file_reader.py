@@ -1,19 +1,37 @@
 import os
+import re
 import sys
+
+# Matches a trailing inline comment: one-or-more whitespace chars + # + rest.
+# The leading whitespace requirement prevents stripping # inside unquoted values
+# that immediately follow non-whitespace (e.g. a literal "#" right after a char).
+_INLINE_COMMENT_RE = re.compile(r'\s+#.*$')
+
+
+def _strip_inline_comment(line: str) -> str:
+    """Remove a trailing inline comment from *line*.
+
+    Only strips ``# ...`` that are preceded by at least one whitespace
+    character, so ``replace col "#" "x"`` is left untouched while
+    ``source "file.csv"  # load data`` is cleaned to ``source "file.csv"``.
+    """
+    return _INLINE_COMMENT_RE.sub("", line)
 
 
 def read_ppl_file(file_path: str) -> list[str]:
     """Read a .ppl pipeline file and return cleaned lines.
 
-    Strips whitespace from each line and discards blank lines and
-    comment lines (those beginning with ``#``).
+    For each raw line the function:
+
+    1. Strips surrounding whitespace.
+    2. Discards blank lines and full-line comment lines (starting with ``#``).
+    3. Strips trailing inline comments (whitespace + ``#`` + rest).
 
     Args:
         file_path: Path to the ``.ppl`` file.
 
     Returns:
-        A list of non-empty, non-comment lines with surrounding
-        whitespace removed.
+        A list of non-empty, non-comment lines ready for parsing.
 
     Raises:
         ValueError: If *file_path* does not end with ``.ppl``.
@@ -29,11 +47,15 @@ def read_ppl_file(file_path: str) -> list[str]:
     with open(file_path, "r", encoding="utf-8") as fh:
         raw_lines = fh.readlines()
 
-    return [
-        line.strip()
-        for line in raw_lines
-        if line.strip() and not line.strip().startswith("#")
-    ]
+    cleaned = []
+    for raw in raw_lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = _strip_inline_comment(line)
+        if line:
+            cleaned.append(line)
+    return cleaned
 
 
 if __name__ == "__main__":

@@ -7,7 +7,10 @@ name = "pipeline-dsl"
 version = "0.1.0"
 description = "A simple Python-based DSL for declarative data pipelines."
 requires-python = ">=3.9"
-dependencies = ["pandas"]
+dependencies = ["pandas", "pyarrow"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
 
 [project.scripts]
 ppl = "main:main"

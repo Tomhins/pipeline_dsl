@@ -142,6 +142,7 @@ from ast_nodes import (
     SourceNode,
     SumNode,
     TrimNode,
+    TryNode,
     UppercaseNode,
 )
 
@@ -193,14 +194,36 @@ def _parse_condition_tuple(
 # ---------------------------------------------------------------------------
 
 def _parse_source(args: str, line_no: int) -> SourceNode:
-    """Parse ``source "file.csv"`` into a :class:`SourceNode`."""
-    path = _strip_quotes(args.strip())
-    if not path:
+    """Parse ``source "file.csv"`` or ``source "file.csv" chunk N``.
+
+    The optional ``chunk N`` suffix enables chunked reading for large files.
+    The executor automatically applies row-safe operations per chunk,
+    reducing peak memory usage.
+
+    Examples::
+
+        source "data/people.csv"
+        source "data/big.csv" chunk 100000
+        source "data/snapshot.parquet"
+    """
+    args = args.strip()
+    m = re.match(
+        r'^["\']([^"\']+)["\']\s*(?:chunk\s+(\d+))?\s*$', args, re.IGNORECASE
+    )
+    if not m or not m.group(1):
         raise SyntaxError(
             f"Line {line_no}: 'source' requires a file path. "
-            "Example: source \"data/people.csv\""
+            "Example: source \"data/people.csv\"\n"
+            "         source \"data/big.csv\" chunk 100000"
         )
-    return SourceNode(file_path=path)
+    path = m.group(1)
+    chunk_size = int(m.group(2)) if m.group(2) else None
+    if chunk_size is not None and chunk_size <= 0:
+        raise SyntaxError(
+            f"Line {line_no}: chunk size must be a positive integer. "
+            "Example: source \"data/big.csv\" chunk 100000"
+        )
+    return SourceNode(file_path=path, chunk_size=chunk_size)
 
 
 def _parse_filter(args: str, line_no: int):
@@ -503,7 +526,17 @@ def _parse_agg_multi(args: str, line_no: int) -> MultiAggNode:
 
 
 def _parse_join(args: str, line_no: int) -> JoinNode:
-    """Parse ``join "file.csv" on <column>`` into a :class:`JoinNode`."""
+    """Parse ``join "file.csv" on <column> [inner|left|right|outer]``.
+
+    The join type defaults to ``inner`` when omitted.
+
+    Examples::
+
+        join "data/other.csv" on id
+        join "data/other.csv" on id left
+        join "data/other.csv" on id outer
+    """
+    _VALID_HOW = ("inner", "left", "right", "outer")
     m = re.match(r'^["\']([^"\']+)["\'](.*)$', args.strip())
     if not m:
         raise SyntaxError(
@@ -517,10 +550,18 @@ def _parse_join(args: str, line_no: int) -> JoinNode:
             f"Line {line_no}: 'join' requires 'on <column>'. "
             "Example: join \"data/other.csv\" on id"
         )
-    key = remainder[2:].strip()
-    if not key:
+    after_on = remainder[2:].strip()
+    parts = after_on.split()
+    if not parts:
         raise SyntaxError(f"Line {line_no}: 'join … on' requires a key column name.")
-    return JoinNode(file_path=file_path, key=key)
+    key = parts[0]
+    how = parts[1].lower() if len(parts) > 1 else "inner"
+    if how not in _VALID_HOW:
+        raise SyntaxError(
+            f"Line {line_no}: join type must be one of: {', '.join(_VALID_HOW)}. "
+            f"Got '{how}'. Example: join \"data/other.csv\" on id left"
+        )
+    return JoinNode(file_path=file_path, key=key, how=how)
 
 
 def _parse_merge(args: str, line_no: int) -> MergeNode:
@@ -679,6 +720,9 @@ _NO_ARG_NODES: dict[str, ASTNode] = {
 def parse_lines(lines: list[str]) -> list[ASTNode]:
     """Convert a list of cleaned DSL lines into a list of :class:`ASTNode` objects.
 
+    Supports ``try`` / ``on_error`` block syntax for error recovery in addition
+    to the standard single-line commands.
+
     Args:
         lines: Cleaned lines as returned by :func:`~file_reader.read_ppl_file`.
 
@@ -687,27 +731,89 @@ def parse_lines(lines: list[str]) -> list[ASTNode]:
         :func:`~executor.run_pipeline`.
 
     Raises:
-        SyntaxError: If an unknown command is encountered or a command
-            cannot be parsed correctly.
+        SyntaxError: If an unknown command is encountered, a command
+            cannot be parsed correctly, or a ``try`` block is missing its
+            ``on_error`` handler.
     """
     nodes: list[ASTNode] = []
+    i = 0
 
-    for line_no, line in enumerate(lines, start=1):
+    while i < len(lines):
+        line = lines[i]
+        line_no = i + 1  # 1-indexed for error messages
         keyword, _, rest = line.partition(" ")
         keyword_lower = keyword.lower()
 
-        if keyword_lower in _NO_ARG_NODES:
-            nodes.append(_NO_ARG_NODES[keyword_lower]())
+        # ------------------------------------------------------------------ #
+        # try / on_error block                                                #
+        # ------------------------------------------------------------------ #
+        if keyword_lower == "try":
+            body_lines: list[str] = []
+            i += 1
+            depth = 1  # track nesting: each inner 'try' increments, each 'on_error' decrements
+            found_on_error = False
+            while i < len(lines):
+                token = lines[i].strip().split()[0].lower() if lines[i].strip() else ""
+                if token == "try":
+                    depth += 1
+                    body_lines.append(lines[i])
+                elif token == "on_error":
+                    depth -= 1
+                    if depth == 0:
+                        found_on_error = True
+                        break
+                    body_lines.append(lines[i])  # inner on_error is part of body
+                else:
+                    body_lines.append(lines[i])
+                i += 1
+            if not found_on_error:
+                raise SyntaxError(
+                    f"Line {line_no}: 'try' block has no 'on_error' handler. "
+                    "Example:\n  try\n    cast age int\n  on_error skip"
+                )
+            on_error_line = lines[i]
+            _, _, error_action = on_error_line.partition(" ")
+            error_action = error_action.strip()
+
+            body_nodes = parse_lines(body_lines)
+
+            # Pre-parse the error handler for non-skip/log actions.
+            action_lower = error_action.lower()
+            if action_lower == "skip" or action_lower.startswith("log "):
+                on_error_nodes: list[ASTNode] = []
+            elif error_action:
+                on_error_nodes = parse_lines([error_action])
+            else:
+                raise SyntaxError(
+                    f"Line {line_no}: 'on_error' requires an action. "
+                    "Use 'skip', 'log \"message\"', or any valid command."
+                )
+
+            nodes.append(
+                TryNode(
+                    body=body_nodes,
+                    on_error_nodes=on_error_nodes,
+                    error_action=error_action,
+                )
+            )
+            i += 1
             continue
 
-        if keyword_lower in _PARSERS:
+        # ------------------------------------------------------------------ #
+        # Standard single-line commands                                       #
+        # ------------------------------------------------------------------ #
+        if keyword_lower in _NO_ARG_NODES:
+            nodes.append(_NO_ARG_NODES[keyword_lower]())
+        elif keyword_lower in _PARSERS:
             node = _PARSERS[keyword_lower](rest, line_no)
             nodes.append(node)
         else:
-            all_commands = sorted(list(_PARSERS) + list(_NO_ARG_NODES))
+            all_commands = sorted(list(_PARSERS) + list(_NO_ARG_NODES) + ["try"])
             raise SyntaxError(
                 f"Line {line_no}: unknown command '{keyword}'. "
                 "Supported commands: " + ", ".join(all_commands)
             )
+
+        i += 1
 
     return nodes
