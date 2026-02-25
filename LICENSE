@@ -1,10 +1,29 @@
-Copyright (c) 2026 Tom Kremser. All rights reserved.
+Copyright (c) 2026 Tom Kremser.
 
-This software and its source code are the exclusive property of the author.
-No part of this software may be used, copied, modified, merged, distributed,
-sublicensed, or sold without the express prior written permission of the author.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated source code (the "Software"), to use, copy,
+and modify the Software for personal or commercial purposes, subject to the
+following conditions:
 
-Viewing the source code (e.g. on a public repository) does NOT grant any rights
-to use, modify, or distribute it.
+1. PERMITTED USE
+   You may use the Software to build pipelines, automate workflows, and create
+   data processing solutions for yourself, your employer, or your clients.
+   You may modify the Software to suit your own needs.
 
-To request permission, contact the author directly.
+2. RESTRICTIONS
+   You may NOT sell, sublicense, or commercially redistribute the Software
+   itself — whether in original or modified form — as a standalone product,
+   library, tool, or service. The Software may not be repackaged and offered
+   for sale or licensed to third parties for a fee.
+
+3. ATTRIBUTION
+   The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+   If the Software is used as part of a commercial product or service, you must
+   clearly credit the author (Tom Kremser) in your product documentation,
+   about page, or other reasonable location visible to end users.
+
+4. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+   OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.

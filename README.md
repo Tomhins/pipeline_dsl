@@ -221,8 +221,11 @@ Copy `dist\ppl.exe` to any folder on your PATH and the `ppl` command works every
 
 ## License
 
-Copyright (c) 2026 Tom Kremser. All rights reserved.
+Copyright (c) 2026 Tom Kremser.
 
-This project and its source code are proprietary. You may view the source code
-but may not use, copy, modify, or distribute it without the author's explicit
-written permission. See [LICENSE](LICENSE) for details.
+Free to use and modify for personal or commercial projects — you can use this
+tool to build pipelines and data workflows for yourself or your company.
+Commercial use requires crediting the author (Tom Kremser) in your product
+documentation or about page.
+You may **not** sell or redistribute the Software itself as a product or service.
+See [LICENSE](LICENSE) for full details.
