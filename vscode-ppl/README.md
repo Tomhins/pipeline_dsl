@@ -1,5 +1,8 @@
 # Pipeline DSL — VS Code Extension
 
+[![GitHub](https://img.shields.io/badge/github-Tomhins%2Fpipeline__dsl-black?logo=github)](https://github.com/Tomhins/pipeline_dsl)
+[![README](https://img.shields.io/badge/docs-README-blue)](https://github.com/Tomhins/pipeline_dsl/blob/main/README.md)
+
 Adds language support for `.ppl` pipeline files inside VS Code:
 
 - **Syntax highlighting** — keywords, operators, strings, numbers, and comments are all coloured
