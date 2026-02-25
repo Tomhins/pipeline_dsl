@@ -1,0 +1,9 @@
+# Tutorial 1: Hello Pipeline
+# Your very first Pipeline DSL program.
+# Run with: ppl tutorials/01_hello_pipeline.ppl
+
+# Step 1: Load data from a CSV file
+source "data/people.csv"
+
+# Step 2: Take a peek at your data
+print

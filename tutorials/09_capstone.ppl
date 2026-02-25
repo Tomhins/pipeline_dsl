@@ -1,0 +1,51 @@
+# Tutorial 9: Capstone — Full Pipeline
+# Everything together in one real-world-style pipeline.
+# Run with: ppl tutorials/09_capstone.ppl
+
+# =====================================================
+# GOAL: Produce a country salary report for adult employees
+# =====================================================
+
+# 1. Load raw data
+source "data/people.csv"
+
+# 2. Inspect before touching anything
+inspect
+
+# 3. Handle data quality issues
+fill salary 0           # treat missing salary as 0
+fill country "Unknown"  # treat missing country as Unknown
+
+# 4. Validate — all ages must be positive
+assert age > 0
+
+# 5. Filter to working-age adults only
+filter age >= 18
+
+# 6. Create derived columns
+rename salary income
+add tax = income * 0.2
+add net_income = income - tax
+
+# 7. Drop columns we no longer need
+drop tax
+
+# 8. Sort by net income descending — highest earners first
+sort by net_income desc
+
+# 9. Preview top 5
+head 5
+
+# 10. Now group and summarise by country
+source "data/people.csv"  # reload for the grouped summary
+fill salary 0
+filter age >= 18
+group by country
+avg salary
+
+sort by country asc
+
+# 11. Save the country summary
+save "output/capstone_by_country.csv"
+
+print

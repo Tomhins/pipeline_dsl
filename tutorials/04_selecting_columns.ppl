@@ -1,0 +1,17 @@
+# Tutorial 4: Selecting & Dropping Columns
+# Control which columns appear in your output.
+# Run with: ppl tutorials/04_selecting_columns.ppl
+
+source "data/people.csv"
+
+# select: keep ONLY these columns (in this order)
+select name, country, salary
+
+# drop: remove specific columns, keep the rest
+# (uncomment to try — comment out select above first)
+# drop salary
+
+# distinct: remove duplicate rows
+distinct
+
+print

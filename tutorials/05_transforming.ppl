@@ -1,0 +1,21 @@
+# Tutorial 5: Transforming Data
+# Rename columns, compute new values, sort, and limit.
+# Run with: ppl tutorials/05_transforming.ppl
+
+source "data/people.csv"
+
+# rename: give a column a new name
+rename salary income
+
+# add: create a new computed column using arithmetic
+add tax = income * 0.2
+add net_income = income - tax
+
+# sort by: order rows by one or more columns
+# asc = ascending (default), desc = descending
+sort by net_income desc
+
+# limit: keep only the top N rows
+limit 5
+
+print

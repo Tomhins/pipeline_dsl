@@ -1,0 +1,31 @@
+# Tutorial 6: Grouping & Aggregation
+# Summarise your data with group by and aggregation commands.
+# Run with: ppl tutorials/06_aggregation.ppl
+
+source "data/people.csv"
+
+# --- Total aggregation (no group by) ---
+# These return a single summary row for the whole dataset.
+
+# count: how many rows total?
+# Uncomment one block at a time to experiment.
+
+# count
+
+# avg age across all people
+# avg age
+
+# --- Grouped aggregation ---
+# group by + aggregation = one result row per group
+
+group by country
+count
+
+# Reload for next example
+source "data/people.csv"
+filter age >= 18
+group by country
+avg salary
+
+sort by country asc
+print

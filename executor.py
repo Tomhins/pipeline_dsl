@@ -24,10 +24,13 @@ class PipelineContext:
         grouped: The current :class:`pandas.core.groupby.DataFrameGroupBy`
             object produced by a :class:`~ast_nodes.GroupByNode`, or ``None``
             when no grouping is active.
+        variables: Named variables set via ``set`` or ``env`` commands,
+            referenced as ``$name`` in other commands.
     """
 
     df: pd.DataFrame | None = field(default=None)
     grouped: Any | None = field(default=None)
+    variables: dict = field(default_factory=dict)
 
 
 def run_pipeline(nodes: list[ASTNode]) -> pd.DataFrame | None:
@@ -56,7 +59,7 @@ def run_pipeline(nodes: list[ASTNode]) -> pd.DataFrame | None:
         node_name = node.__class__.__name__
         try:
             node.execute(context)
-        except (FileNotFoundError, KeyError, RuntimeError, ValueError) as exc:
+        except (AssertionError, FileNotFoundError, KeyError, RuntimeError, ValueError) as exc:
             # Re-raise with the failing node type in the message for clarity.
             raise type(exc)(f"[{node_name}] {exc}") from exc
 
