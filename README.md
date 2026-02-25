@@ -372,9 +372,8 @@ Copy `dist\ppl.exe` to any folder on your PATH and the `ppl` command works every
 
 ## License
 
-Copyright (c) 2026 Tom Kremser. All rights reserved.
+Copyright (c) 2026 Tom Kremser.
+Licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
 
-No part of this software or its source code may be reproduced, distributed,
-modified, or transmitted in any form or by any means without the prior written
-permission of the copyright owner.
+Free to use, share, and adapt with attribution — commercial use is not permitted.
 See [LICENSE](LICENSE) for full details.
