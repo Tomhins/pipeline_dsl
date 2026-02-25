@@ -1,0 +1,50 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Pipeline DSL",
+  "scopeName": "source.ppl",
+  "fileTypes": ["ppl"],
+  "patterns": [
+    { "include": "#comments"  },
+    { "include": "#keywords"  },
+    { "include": "#strings"   },
+    { "include": "#operators" },
+    { "include": "#numbers"   }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.ppl"
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(source|save)\\b",
+          "name": "keyword.control.io.ppl"
+        },
+        {
+          "match": "\\b(filter|select|group|by|count)\\b",
+          "name": "keyword.control.transform.ppl"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.ppl",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.ppl"
+        }
+      ]
+    },
+    "operators": {
+      "match": "(>=|<=|!=|==|>|<)",
+      "name": "keyword.operator.comparison.ppl"
+    },
+    "numbers": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.ppl"
+    }
+  }
+}

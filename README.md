@@ -170,3 +170,46 @@ The DSL provides clear error messages for common mistakes:
 | Invalid command | `Line 3: unknown command 'sortby'. Supported commands: count, filter, ...` |
 | Missing `.ppl` extension | `Expected a .ppl file, got: 'data.csv'` |
 | Bad filter syntax | `Line 2: could not parse 'filter' condition 'age'. Expected: filter <column> <op> <value>` |
+
+---
+
+## VS Code Extension
+
+The `vscode-ppl/` folder contains a VS Code extension that adds syntax highlighting and a one-click run button for `.ppl` files.
+
+**Install:**
+```powershell
+cd vscode-ppl
+"y" | vsce package --no-dependencies
+code --install-extension vscode-ppl-0.1.0.vsix
+```
+Then reload VS Code (`Ctrl+Shift+P` → `Developer: Reload Window`).
+
+See [vscode-ppl/README.md](vscode-ppl/README.md) for full details and update instructions.
+
+---
+
+## Updating the Extension
+
+1. Edit files in `vscode-ppl/` (see table in [vscode-ppl/README.md](vscode-ppl/README.md))
+2. Bump `"version"` in [vscode-ppl/package.json](vscode-ppl/package.json)
+3. Repackage and reinstall:
+
+```powershell
+cd vscode-ppl
+"y" | vsce package --no-dependencies
+code --install-extension vscode-ppl-<version>.vsix
+```
+
+---
+
+## Building a Standalone Exe
+
+To produce a `ppl.exe` that works on any Windows machine with no Python installed:
+
+```powershell
+.\build_exe.ps1
+# Output: dist\ppl.exe
+```
+
+Copy `dist\ppl.exe` to any folder on your PATH and the `ppl` command works everywhere.

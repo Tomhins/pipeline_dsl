@@ -1,0 +1,53 @@
+{
+  "name": "vscode-ppl",
+  "displayName": "Pipeline DSL",
+  "description": "Language support and runner for .ppl pipeline files",
+  "version": "0.1.0",
+  "publisher": "pipeline-dsl",
+  "engines": { "vscode": "^1.75.0" },
+  "repository": { "type": "git", "url": "https://github.com/local/pipeline-dsl" },
+  "license": "MIT",
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:ppl"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "ppl",
+        "aliases": ["Pipeline DSL", "ppl"],
+        "extensions": [".ppl"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ppl",
+        "scopeName": "source.ppl",
+        "path": "./syntaxes/ppl.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "ppl.runPipeline",
+        "title": "Run Pipeline",
+        "icon": "$(play)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "ppl.runPipeline",
+          "when": "resourceLangId == ppl",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "ppl.runPipeline",
+          "when": "resourceLangId == ppl",
+          "group": "1_run"
+        }
+      ]
+    }
+  }
+}
