@@ -6,9 +6,11 @@ itself against a :class:`~executor.PipelineContext`.
 
 from __future__ import annotations
 
+import glob as glob_module
 import os
+import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -45,6 +47,44 @@ def _apply_operator(col: pd.Series, op: str, rhs: float | str) -> pd.Series:
     raise ValueError(f"unsupported operator '{op}'. Supported: {list(_OPERATORS)}")
 
 
+def _resolve_value(value: str, context: "PipelineContext") -> str:
+    """Resolve a simple $varname token from context.variables.
+
+    If *value* starts with ``$``, look it up in ``context.variables``.
+    Otherwise return *value* unchanged (still stripped of surrounding spaces).
+    """
+    stripped = value.strip()
+    if stripped.startswith("$"):
+        var_name = stripped[1:]
+        if var_name not in context.variables:
+            raise KeyError(
+                f"variable '${var_name}' is not defined. "
+                f"Use 'set {var_name} = <value>' first."
+            )
+        return context.variables[var_name]
+    return stripped
+
+
+def _substitute_vars(text: str, context: "PipelineContext") -> str:
+    """Replace every ``$varname`` token in *text* with its value."""
+    def _replace(m: re.Match) -> str:
+        var_name = m.group(1)
+        if var_name not in context.variables:
+            raise KeyError(f"variable '${var_name}' is not defined.")
+        return context.variables[var_name]
+
+    return re.sub(r'\$(\w+)', _replace, text)
+
+
+def _coerce_rhs(raw: str) -> float | str:
+    """Try to parse *raw* as a float; fall back to a stripped string."""
+    cleaned = raw.strip("\"'")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return cleaned
+
+
 # ---------------------------------------------------------------------------
 # Base node
 # ---------------------------------------------------------------------------
@@ -52,184 +92,239 @@ def _apply_operator(col: pd.Series, op: str, rhs: float | str) -> pd.Series:
 class ASTNode:
     """Abstract base class for all pipeline AST nodes."""
 
-    def execute(self, context: PipelineContext) -> None:  # noqa: D102
+    def execute(self, context: "PipelineContext") -> None:  # noqa: D102
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement execute()"
         )
 
 
 # ---------------------------------------------------------------------------
-# Concrete nodes
+# Data loading nodes
 # ---------------------------------------------------------------------------
 
 @dataclass
 class SourceNode(ASTNode):
     """Load a CSV file into the pipeline context.
 
-    Args:
-        file_path: Path to the CSV file to load.
+    Supports ``$variable`` references in the file path.
     """
 
     file_path: str
 
-    def execute(self, context: PipelineContext) -> None:
-        """Read *file_path* as a :class:`pandas.DataFrame` and store it in *context*."""
-        if not os.path.exists(self.file_path):
-            raise FileNotFoundError(
-                f"Source file not found: '{self.file_path}'"
-            )
-        context.df = pd.read_csv(self.file_path)
+    def execute(self, context: "PipelineContext") -> None:
+        path = _substitute_vars(self.file_path, context)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Source file not found: '{path}'")
+        context.df = pd.read_csv(path)
         context.grouped = None
 
 
 @dataclass
+class ForeachNode(ASTNode):
+    """Load and concatenate all CSV files matching a glob pattern.
+
+    Example: ``foreach "data/monthly/*.csv"``
+    The resulting DataFrame is the row-wise union of all matched files.
+    """
+
+    pattern: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        pattern = _substitute_vars(self.pattern, context)
+        files = sorted(glob_module.glob(pattern))
+        if not files:
+            raise FileNotFoundError(
+                f"foreach: no files matched pattern '{pattern}'"
+            )
+        dfs = [pd.read_csv(f) for f in files]
+        context.df = pd.concat(dfs, ignore_index=True)
+        context.grouped = None
+
+
+@dataclass
+class IncludeNode(ASTNode):
+    """Include and execute another ``.ppl`` file, sharing the current context.
+
+    Example: ``include "pipelines/shared/clean.ppl"``
+    """
+
+    file_path: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        from file_reader import read_ppl_file  # avoid circular import at module level
+        from ppl_parser import parse_lines
+
+        path = _substitute_vars(self.file_path, context)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"include: file not found: '{path}'")
+        lines = read_ppl_file(path)
+        nodes = parse_lines(lines)
+        for sub_node in nodes:
+            node_name = sub_node.__class__.__name__
+            try:
+                sub_node.execute(context)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"include '{path}': [{node_name}] {exc}"
+                ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Filtering nodes
+# ---------------------------------------------------------------------------
+
+@dataclass
 class FilterNode(ASTNode):
-    """Filter the current DataFrame by a simple column condition.
+    """Filter rows by a single column condition.
 
-    Supports operators: ``>``, ``<``, ``>=``, ``<=``, ``==``, ``!=``.
-
-    Args:
-        column: Name of the column to test.
-        operator: Comparison operator string.
-        value: Right-hand side value (parsed as float when possible).
+    Supports ``$variable`` references in *value*.
+    Operators: ``>``, ``<``, ``>=``, ``<=``, ``==``, ``!=``.
     """
 
     column: str
     operator: str
     value: str
 
-    def execute(self, context: PipelineContext) -> None:
-        """Apply the filter and reassign *context.df*."""
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("filter: no data loaded — use 'source' first")
-
         df = context.df
-
         if self.column not in df.columns:
             raise KeyError(
                 f"filter: column '{self.column}' not found. "
                 f"Available: {list(df.columns)}"
             )
-
-        # Attempt numeric coercion; fall back to string (strip outer quotes)
-        raw = self.value.strip("\"'")
-        try:
-            rhs: float | str = float(raw)
-        except ValueError:
-            rhs = raw
-
+        raw = _resolve_value(self.value, context)
+        rhs = _coerce_rhs(raw)
         try:
             mask = _apply_operator(df[self.column], self.operator, rhs)
         except ValueError as exc:
             raise ValueError(f"filter: {exc}") from exc
-
         context.df = df[mask]
         context.grouped = None
 
 
 @dataclass
-class SelectNode(ASTNode):
-    """Keep only the specified columns in the current DataFrame.
+class CompoundFilterNode(ASTNode):
+    """Filter rows using multiple AND / OR conditions on a single line.
 
-    Args:
-        columns: Ordered list of column names to retain.
+    Example: ``filter age >= 18 and country == "Germany"``
     """
+
+    # conditions: list of (column, operator, value) tuples
+    # logic:      list of "and" / "or" strings (len = len(conditions) - 1)
+    conditions: list
+    logic: list
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("filter: no data loaded — use 'source' first")
+        df = context.df
+        mask = None
+        for i, (col, op, val) in enumerate(self.conditions):
+            if col not in df.columns:
+                raise KeyError(
+                    f"filter: column '{col}' not found. "
+                    f"Available: {list(df.columns)}"
+                )
+            raw = _resolve_value(val, context)
+            rhs = _coerce_rhs(raw)
+            cond_mask = _apply_operator(df[col], op, rhs)
+            if mask is None:
+                mask = cond_mask
+            else:
+                lg = self.logic[i - 1]
+                mask = (mask & cond_mask) if lg == "and" else (mask | cond_mask)
+        context.df = df[mask]
+        context.grouped = None
+
+
+# ---------------------------------------------------------------------------
+# Column selection / projection nodes
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SelectNode(ASTNode):
+    """Keep only the specified columns in the current DataFrame."""
 
     columns: list[str]
 
-    def execute(self, context: PipelineContext) -> None:
-        """Project *context.df* down to *columns*."""
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("select: no data loaded — use 'source' first")
-
         missing = [c for c in self.columns if c not in context.df.columns]
         if missing:
             raise KeyError(
                 f"select: unknown column(s) {missing}. "
                 f"Available: {list(context.df.columns)}"
             )
-
         context.df = context.df[self.columns]
         context.grouped = None
 
 
 @dataclass
-class GroupByNode(ASTNode):
-    """Group the current DataFrame by one or more columns.
-
-    The resulting :class:`pandas.DataFrameGroupBy` object is stored on
-    *context.grouped* and consumed by the next :class:`CountNode`.
-
-    Args:
-        columns: Column names to group by.
-    """
+class DropNode(ASTNode):
+    """Remove one or more columns from the current DataFrame."""
 
     columns: list[str]
 
-    def execute(self, context: PipelineContext) -> None:
-        """Call :meth:`pandas.DataFrame.groupby` and store the result."""
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
-            raise RuntimeError("group by: no data loaded — use 'source' first")
-
+            raise RuntimeError("drop: no data loaded — use 'source' first")
         missing = [c for c in self.columns if c not in context.df.columns]
         if missing:
             raise KeyError(
-                f"group by: unknown column(s) {missing}. "
+                f"drop: unknown column(s) {missing}. "
                 f"Available: {list(context.df.columns)}"
             )
-
-        context.grouped = context.df.groupby(self.columns, sort=False)
-
-
-@dataclass
-class CountNode(ASTNode):
-    """Count rows, optionally within groups.
-
-    * With an active ``group by``: produces a ``count`` column per group and
-      replaces *context.df* with the aggregated result.
-    * Without grouping: replaces *context.df* with a single-row DataFrame
-      containing the total row count.
-    """
-
-    def execute(self, context: PipelineContext) -> None:
-        """Resolve the count and store the result in *context.df*."""
-        if context.grouped is not None:
-            context.df = (
-                context.grouped.size().reset_index(name="count")
-            )
-            context.grouped = None
-        elif context.df is not None:
-            context.df = pd.DataFrame({"count": [len(context.df)]})
-        else:
-            raise RuntimeError("count: no data loaded — use 'source' first")
+        context.df = context.df.drop(columns=self.columns)
+        context.grouped = None
 
 
 @dataclass
-class SaveNode(ASTNode):
-    """Write the current DataFrame to a CSV file.
+class LimitNode(ASTNode):
+    """Keep only the first *n* rows."""
 
-    Parent directories are created automatically if they do not exist.
+    n: int
 
-    Args:
-        file_path: Destination path for the output CSV.
-    """
-
-    file_path: str
-
-    def execute(self, context: PipelineContext) -> None:
-        """Persist *context.df* to *file_path* as CSV or JSON (no index column)."""
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
-            raise RuntimeError("save: no data to save — pipeline produced no output")
+            raise RuntimeError("limit: no data loaded — use 'source' first")
+        context.df = context.df.head(self.n).reset_index(drop=True)
+        context.grouped = None
 
-        out_dir = os.path.dirname(self.file_path)
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
 
-        ext = os.path.splitext(self.file_path)[1].lower()
-        if ext == ".json":
-            context.df.to_json(self.file_path, orient="records", indent=2)
+@dataclass
+class DistinctNode(ASTNode):
+    """Remove duplicate rows from the current DataFrame."""
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("distinct: no data loaded — use 'source' first")
+        context.df = context.df.drop_duplicates().reset_index(drop=True)
+        context.grouped = None
+
+
+@dataclass
+class SampleNode(ASTNode):
+    """Take a random sample of N rows or N% of the data.
+
+    Examples: ``sample 100``  or  ``sample 10%``
+    """
+
+    n: int | None
+    pct: float | None
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("sample: no data loaded — use 'source' first")
+        df = context.df
+        if self.pct is not None:
+            context.df = df.sample(frac=self.pct / 100.0).reset_index(drop=True)
         else:
-            context.df.to_csv(self.file_path, index=False)
+            n = min(self.n, len(df))
+            context.df = df.sample(n=n).reset_index(drop=True)
+        context.grouped = None
 
 
 # ---------------------------------------------------------------------------
@@ -238,17 +333,12 @@ class SaveNode(ASTNode):
 
 @dataclass
 class SortNode(ASTNode):
-    """Sort the current DataFrame by one or more columns.
-
-    Args:
-        columns: Column names to sort by.
-        ascending: Matching list of booleans (True = asc, False = desc).
-    """
+    """Sort the current DataFrame by one or more columns."""
 
     columns: list[str]
     ascending: list[bool]
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("sort: no data loaded — use 'source' first")
         missing = [c for c in self.columns if c not in context.df.columns]
@@ -265,17 +355,12 @@ class SortNode(ASTNode):
 
 @dataclass
 class RenameNode(ASTNode):
-    """Rename a single column.
-
-    Args:
-        old_name: Existing column name.
-        new_name: New column name.
-    """
+    """Rename a single column."""
 
     old_name: str
     new_name: str
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("rename: no data loaded — use 'source' first")
         if self.old_name not in context.df.columns:
@@ -291,23 +376,19 @@ class RenameNode(ASTNode):
 class AddNode(ASTNode):
     """Add a computed column using an arithmetic expression.
 
-    The expression is evaluated via :meth:`pandas.DataFrame.eval` so it can
-    reference existing column names directly (e.g. ``price * 0.2``).
-
-    Args:
-        column: Name of the new column to create.
-        expression: Arithmetic expression referencing existing columns.
+    Supports ``$variable`` substitution in the expression.
     """
 
     column: str
     expression: str
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("add: no data loaded — use 'source' first")
         try:
+            expr = _substitute_vars(self.expression, context)
             context.df = context.df.copy()
-            context.df[self.column] = context.df.eval(self.expression)
+            context.df[self.column] = context.df.eval(expr)
         except Exception as exc:
             raise ValueError(
                 f"add: could not evaluate expression '{self.expression}': {exc}"
@@ -316,68 +397,286 @@ class AddNode(ASTNode):
 
 
 @dataclass
-class DropNode(ASTNode):
-    """Remove one or more columns from the current DataFrame.
+class AddIfNode(ASTNode):
+    """Add a column whose value depends on a condition (if/then/else).
 
-    Args:
-        columns: Column names to drop.
+    Example: ``add tier = if salary > 80000 then "senior" else "junior"``
     """
+
+    column: str
+    cond_col: str
+    cond_op: str
+    cond_val: str
+    true_val: str
+    false_val: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        import numpy as np  # lazy import — numpy is a pandas transitive dep
+
+        if context.df is None:
+            raise RuntimeError("add: no data loaded — use 'source' first")
+        df = context.df
+        if self.cond_col not in df.columns:
+            raise KeyError(
+                f"add: column '{self.cond_col}' not found. "
+                f"Available: {list(df.columns)}"
+            )
+        raw = _resolve_value(self.cond_val, context)
+        rhs = _coerce_rhs(raw)
+        mask = _apply_operator(df[self.cond_col], self.cond_op, rhs)
+
+        def _to_val(v: str) -> Any:
+            resolved = _resolve_value(v, context).strip("\"'")
+            if resolved in df.columns:
+                return df[resolved]
+            try:
+                return float(resolved)
+            except ValueError:
+                return resolved
+
+        context.df = df.copy()
+        context.df[self.column] = np.where(
+            mask, _to_val(self.true_val), _to_val(self.false_val)
+        )
+        context.grouped = None
+
+
+@dataclass
+class TrimNode(ASTNode):
+    """Strip leading/trailing whitespace from a string column."""
+
+    column: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("trim: no data loaded — use 'source' first")
+        if self.column not in context.df.columns:
+            raise KeyError(
+                f"trim: column '{self.column}' not found. "
+                f"Available: {list(context.df.columns)}"
+            )
+        context.df = context.df.copy()
+        context.df[self.column] = context.df[self.column].astype(str).str.strip()
+        context.grouped = None
+
+
+@dataclass
+class UppercaseNode(ASTNode):
+    """Convert a string column to uppercase."""
+
+    column: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("uppercase: no data loaded — use 'source' first")
+        if self.column not in context.df.columns:
+            raise KeyError(
+                f"uppercase: column '{self.column}' not found. "
+                f"Available: {list(context.df.columns)}"
+            )
+        context.df = context.df.copy()
+        context.df[self.column] = context.df[self.column].astype(str).str.upper()
+        context.grouped = None
+
+
+@dataclass
+class LowercaseNode(ASTNode):
+    """Convert a string column to lowercase."""
+
+    column: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("lowercase: no data loaded — use 'source' first")
+        if self.column not in context.df.columns:
+            raise KeyError(
+                f"lowercase: column '{self.column}' not found. "
+                f"Available: {list(context.df.columns)}"
+            )
+        context.df = context.df.copy()
+        context.df[self.column] = context.df[self.column].astype(str).str.lower()
+        context.grouped = None
+
+
+_CAST_TYPE_MAP: dict[str, Any] = {
+    "int":      lambda s: pd.to_numeric(s, errors="coerce").astype("Int64"),
+    "integer":  lambda s: pd.to_numeric(s, errors="coerce").astype("Int64"),
+    "float":    lambda s: pd.to_numeric(s, errors="coerce").astype(float),
+    "double":   lambda s: pd.to_numeric(s, errors="coerce").astype(float),
+    "str":      lambda s: s.astype(str),
+    "string":   lambda s: s.astype(str),
+    "text":     lambda s: s.astype(str),
+    "datetime": lambda s: pd.to_datetime(s, errors="coerce"),
+    "date":     lambda s: pd.to_datetime(s, errors="coerce"),
+    "bool":     lambda s: s.astype(bool),
+    "boolean":  lambda s: s.astype(bool),
+}
+
+
+@dataclass
+class CastNode(ASTNode):
+    """Cast a column to a different data type.
+
+    Example: ``cast age int``  |  ``cast score float``  |  ``cast ts datetime``
+    """
+
+    column: str
+    type_name: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("cast: no data loaded — use 'source' first")
+        if self.column not in context.df.columns:
+            raise KeyError(
+                f"cast: column '{self.column}' not found. "
+                f"Available: {list(context.df.columns)}"
+            )
+        t = self.type_name.lower()
+        if t not in _CAST_TYPE_MAP:
+            raise ValueError(
+                f"cast: unknown type '{self.type_name}'. "
+                f"Supported: {', '.join(sorted(_CAST_TYPE_MAP))}"
+            )
+        df = context.df.copy()
+        df[self.column] = _CAST_TYPE_MAP[t](df[self.column])
+        context.df = df
+        context.grouped = None
+
+
+@dataclass
+class ReplaceNode(ASTNode):
+    """Replace occurrences of a value in a column.
+
+    Example: ``replace country "Germany" "DE"``
+    """
+
+    column: str
+    old_value: str
+    new_value: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("replace: no data loaded — use 'source' first")
+        if self.column not in context.df.columns:
+            raise KeyError(
+                f"replace: column '{self.column}' not found. "
+                f"Available: {list(context.df.columns)}"
+            )
+        df = context.df.copy()
+        old = _coerce_rhs(self.old_value)
+        new = _coerce_rhs(self.new_value)
+        df[self.column] = df[self.column].replace(old, new)
+        context.df = df
+        context.grouped = None
+
+
+@dataclass
+class PivotNode(ASTNode):
+    """Reshape data from long to wide format.
+
+    Example: ``pivot index=country column=year value=revenue``
+    """
+
+    index: str
+    column: str
+    value: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("pivot: no data loaded — use 'source' first")
+        df = context.df
+        for col in [self.index, self.column, self.value]:
+            if col not in df.columns:
+                raise KeyError(
+                    f"pivot: column '{col}' not found. "
+                    f"Available: {list(df.columns)}"
+                )
+        result = df.pivot_table(
+            index=self.index,
+            columns=self.column,
+            values=self.value,
+            aggfunc="sum",
+        ).reset_index()
+        result.columns.name = None
+        context.df = result
+        context.grouped = None
+
+
+# ---------------------------------------------------------------------------
+# Grouping node
+# ---------------------------------------------------------------------------
+
+@dataclass
+class GroupByNode(ASTNode):
+    """Group the current DataFrame by one or more columns."""
 
     columns: list[str]
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
-            raise RuntimeError("drop: no data loaded — use 'source' first")
+            raise RuntimeError("group by: no data loaded — use 'source' first")
         missing = [c for c in self.columns if c not in context.df.columns]
         if missing:
             raise KeyError(
-                f"drop: unknown column(s) {missing}. "
+                f"group by: unknown column(s) {missing}. "
                 f"Available: {list(context.df.columns)}"
             )
-        context.df = context.df.drop(columns=self.columns)
-        context.grouped = None
-
-
-@dataclass
-class LimitNode(ASTNode):
-    """Keep only the first *n* rows.
-
-    Args:
-        n: Maximum number of rows to retain.
-    """
-
-    n: int
-
-    def execute(self, context: PipelineContext) -> None:
-        if context.df is None:
-            raise RuntimeError("limit: no data loaded — use 'source' first")
-        context.df = context.df.head(self.n).reset_index(drop=True)
-        context.grouped = None
-
-
-@dataclass
-class DistinctNode(ASTNode):
-    """Remove duplicate rows from the current DataFrame."""
-
-    def execute(self, context: PipelineContext) -> None:
-        if context.df is None:
-            raise RuntimeError("distinct: no data loaded — use 'source' first")
-        context.df = context.df.drop_duplicates().reset_index(drop=True)
-        context.grouped = None
+        context.grouped = context.df.groupby(self.columns, sort=False)
 
 
 # ---------------------------------------------------------------------------
 # Aggregation nodes
 # ---------------------------------------------------------------------------
 
+@dataclass
+class CountNode(ASTNode):
+    """Count rows — per group if ``group by`` is active, otherwise total."""
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.grouped is not None:
+            context.df = context.grouped.size().reset_index(name="count")
+            context.grouped = None
+        elif context.df is not None:
+            context.df = pd.DataFrame({"count": [len(context.df)]})
+        else:
+            raise RuntimeError("count: no data loaded — use 'source' first")
+
+
+@dataclass
+class CountIfNode(ASTNode):
+    """Print the count of rows matching a condition without modifying the data.
+
+    Example: ``count if salary > 50000``
+    """
+
+    column: str
+    operator: str
+    value: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("count if: no data loaded — use 'source' first")
+        df = context.df
+        if self.column not in df.columns:
+            raise KeyError(
+                f"count if: column '{self.column}' not found. "
+                f"Available: {list(df.columns)}"
+            )
+        raw = _resolve_value(self.value, context)
+        rhs = _coerce_rhs(raw)
+        mask = _apply_operator(df[self.column], self.operator, rhs)
+        count = int(mask.sum())
+        print(f"count if {self.column} {self.operator} {self.value}: {count}")
+
+
 def _agg_node(verb: str, agg_fn: str):
-    """Factory that returns a dataclass-based aggregation node class."""
+    """Factory that returns a dataclass-based single-column aggregation node."""
 
     @dataclass
     class _AggNode(ASTNode):
         column: str
 
-        def execute(self, context: PipelineContext) -> None:
+        def execute(self, context: "PipelineContext") -> None:
             if context.df is None:
                 raise RuntimeError(
                     f"{verb}: no data loaded — use 'source' first"
@@ -409,30 +708,89 @@ MinNode = _agg_node("min", "min")
 MaxNode = _agg_node("max", "max")
 
 
+@dataclass
+class MultiAggNode(ASTNode):
+    """Apply multiple aggregations at once after a ``group by``.
+
+    Example (after ``group by country``)::
+
+        agg sum salary, avg age, count
+
+    ``specs`` is a list of ``(verb, column_or_None)`` tuples where *verb* is
+    one of ``sum``, ``avg``, ``min``, ``max``, or ``count``.
+    """
+
+    specs: list  # list of (verb: str, col: str | None)
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("agg: no data loaded — use 'source' first")
+        if context.grouped is None:
+            raise RuntimeError(
+                "agg: must follow 'group by'. "
+                "Example:\n  group by country\n  agg sum salary, avg age, count"
+            )
+
+        grouped = context.grouped
+        group_cols = (
+            grouped.keys if isinstance(grouped.keys, list) else [grouped.keys]
+        )
+
+        _FN_MAP = {"sum": "sum", "avg": "mean", "min": "min", "max": "max"}
+        agg_dict: dict[str, str] = {}
+        has_count = False
+
+        for verb, col in self.specs:
+            if verb == "count":
+                has_count = True
+                continue
+            if col is None:
+                raise ValueError(f"agg: '{verb}' requires a column name")
+            if col not in context.df.columns:
+                raise KeyError(
+                    f"agg: column '{col}' not found. "
+                    f"Available: {list(context.df.columns)}"
+                )
+            agg_dict[col] = _FN_MAP[verb]
+
+        parts: list[pd.DataFrame] = []
+        if agg_dict:
+            parts.append(grouped.agg(agg_dict).reset_index())
+        if has_count:
+            parts.append(grouped.size().reset_index(name="count"))
+
+        if not parts:
+            raise ValueError("agg: no valid aggregation specs provided")
+
+        if len(parts) == 1:
+            context.df = parts[0]
+        else:
+            result = parts[0]
+            for part in parts[1:]:
+                result = pd.merge(result, part, on=group_cols)
+            context.df = result
+
+        context.grouped = None
+
+
 # ---------------------------------------------------------------------------
 # Data joining / multi-source nodes
 # ---------------------------------------------------------------------------
 
 @dataclass
 class JoinNode(ASTNode):
-    """Inner-join the current DataFrame with another CSV on a key column.
-
-    Args:
-        file_path: Path to the CSV file to join with.
-        key: Column name to join on (must exist in both datasets).
-    """
+    """Inner-join the current DataFrame with another CSV on a key column."""
 
     file_path: str
     key: str
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("join: no data loaded — use 'source' first")
-        if not os.path.exists(self.file_path):
-            raise FileNotFoundError(
-                f"join: file not found: '{self.file_path}'"
-            )
-        right = pd.read_csv(self.file_path)
+        path = _substitute_vars(self.file_path, context)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"join: file not found: '{path}'")
+        right = pd.read_csv(path)
         if self.key not in context.df.columns:
             raise KeyError(
                 f"join: key '{self.key}' not in current data. "
@@ -440,7 +798,7 @@ class JoinNode(ASTNode):
             )
         if self.key not in right.columns:
             raise KeyError(
-                f"join: key '{self.key}' not found in '{self.file_path}'. "
+                f"join: key '{self.key}' not found in '{path}'. "
                 f"Available: {list(right.columns)}"
             )
         context.df = pd.merge(context.df, right, on=self.key, how="inner")
@@ -449,22 +807,17 @@ class JoinNode(ASTNode):
 
 @dataclass
 class MergeNode(ASTNode):
-    """Append rows from another CSV file (union / stack).
-
-    Args:
-        file_path: Path to the CSV file whose rows are appended.
-    """
+    """Append rows from another CSV file (union / stack)."""
 
     file_path: str
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("merge: no data loaded — use 'source' first")
-        if not os.path.exists(self.file_path):
-            raise FileNotFoundError(
-                f"merge: file not found: '{self.file_path}'"
-            )
-        other = pd.read_csv(self.file_path)
+        path = _substitute_vars(self.file_path, context)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"merge: file not found: '{path}'")
+        other = pd.read_csv(path)
         context.df = pd.concat([context.df, other], ignore_index=True)
         context.grouped = None
 
@@ -474,10 +827,30 @@ class MergeNode(ASTNode):
 # ---------------------------------------------------------------------------
 
 @dataclass
+class SaveNode(ASTNode):
+    """Write the current DataFrame to a CSV or JSON file."""
+
+    file_path: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        if context.df is None:
+            raise RuntimeError("save: no data to save — pipeline produced no output")
+        path = _substitute_vars(self.file_path, context)
+        out_dir = os.path.dirname(path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".json":
+            context.df.to_json(path, orient="records", indent=2)
+        else:
+            context.df.to_csv(path, index=False)
+
+
+@dataclass
 class PrintNode(ASTNode):
     """Print the current DataFrame to stdout without saving."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("print: no data loaded — use 'source' first")
         print(context.df.to_string(index=False))
@@ -487,7 +860,7 @@ class PrintNode(ASTNode):
 class SchemaNode(ASTNode):
     """Print the column names and data types of the current DataFrame."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("schema: no data loaded — use 'source' first")
         print(
@@ -505,7 +878,7 @@ class SchemaNode(ASTNode):
 class InspectNode(ASTNode):
     """Print column names, types, null counts, and unique value counts."""
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("inspect: no data loaded — use 'source' first")
         print(
@@ -529,20 +902,31 @@ class InspectNode(ASTNode):
 
 @dataclass
 class HeadNode(ASTNode):
-    """Print the first *n* rows to stdout without modifying the pipeline data.
-
-    Args:
-        n: Number of rows to display.
-    """
+    """Print the first *n* rows to stdout without modifying pipeline data."""
 
     n: int
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("head: no data loaded — use 'source' first")
         print(f"\nHead ({self.n} row(s)):")
         print(context.df.head(self.n).to_string(index=False))
         print()
+
+
+@dataclass
+class LogNode(ASTNode):
+    """Print a message to the terminal during pipeline execution.
+
+    Supports ``$variable`` substitution in the message.
+    Example: ``log "Processing $label data"``
+    """
+
+    message: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        msg = _substitute_vars(self.message.strip("\"'"), context)
+        print(f"[LOG] {msg}")
 
 
 # ---------------------------------------------------------------------------
@@ -551,21 +935,13 @@ class HeadNode(ASTNode):
 
 @dataclass
 class AssertNode(ASTNode):
-    """Fail the pipeline if any row violates a column condition.
-
-    Uses the same operators as :class:`FilterNode`.
-
-    Args:
-        column: Column to test.
-        operator: Comparison operator.
-        value: Right-hand side value.
-    """
+    """Fail the pipeline if any row violates a column condition."""
 
     column: str
     operator: str
     value: str
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("assert: no data loaded — use 'source' first")
         if self.column not in context.df.columns:
@@ -573,17 +949,12 @@ class AssertNode(ASTNode):
                 f"assert: column '{self.column}' not found. "
                 f"Available: {list(context.df.columns)}"
             )
-        raw = self.value.strip("\"'")
-        try:
-            rhs: float | str = float(raw)
-        except ValueError:
-            rhs = raw
-
+        raw = _resolve_value(self.value, context)
+        rhs = _coerce_rhs(raw)
         try:
             mask = _apply_operator(context.df[self.column], self.operator, rhs)
         except ValueError as exc:
             raise ValueError(f"assert: {exc}") from exc
-
         failures = int((~mask).sum())
         if failures:
             raise AssertionError(
@@ -596,22 +967,14 @@ class AssertNode(ASTNode):
 class FillNode(ASTNode):
     """Fill missing / empty values in a column.
 
-    *strategy* can be:
-
-    * A literal value (number or quoted string) — fills NaN/empty with that value.
-    * ``mean`` / ``median`` / ``mode`` — fills with the column's statistic.
-    * ``forward`` / ``backward`` — propagate the last/next non-null value.
-    * ``drop`` — remove rows where this column is null/empty.
-
-    Args:
-        column: Column to fill.
-        strategy: Fill strategy or literal value.
+    *strategy* can be a fill strategy (``mean``, ``median``, ``mode``,
+    ``forward``, ``backward``, ``drop``) or a literal value.
     """
 
     column: str
     strategy: str
 
-    def execute(self, context: PipelineContext) -> None:
+    def execute(self, context: "PipelineContext") -> None:
         if context.df is None:
             raise RuntimeError("fill: no data loaded — use 'source' first")
         if self.column not in context.df.columns:
@@ -620,9 +983,7 @@ class FillNode(ASTNode):
                 f"Available: {list(context.df.columns)}"
             )
         df = context.df.copy()
-        # Normalise empty strings to NaN so all strategies work uniformly
         df[self.column] = df[self.column].replace("", pd.NA)
-
         s = self.strategy.strip().lower()
 
         if s == "mean":
@@ -642,7 +1003,6 @@ class FillNode(ASTNode):
         elif s == "drop":
             df = df.dropna(subset=[self.column]).reset_index(drop=True)
         else:
-            # Treat strategy as a literal fill value
             raw = self.strategy.strip("\"'")
             try:
                 fill_val: float | int | str = float(raw)
@@ -654,3 +1014,41 @@ class FillNode(ASTNode):
 
         context.df = df
         context.grouped = None
+
+
+# ---------------------------------------------------------------------------
+# Variable / environment nodes
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SetNode(ASTNode):
+    """Set a named variable, referenceable as ``$name`` in other commands.
+
+    Example: ``set threshold = 50000``
+    Then use it:  ``filter salary > $threshold``
+    """
+
+    name: str
+    value: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        context.variables[self.name] = self.value.strip("\"'")
+
+
+@dataclass
+class EnvNode(ASTNode):
+    """Load an OS environment variable into the pipeline variable store.
+
+    Example: ``env DATA_PATH``
+    Then use it:  ``source $DATA_PATH``
+    """
+
+    var_name: str
+
+    def execute(self, context: "PipelineContext") -> None:
+        val = os.environ.get(self.var_name)
+        if val is None:
+            raise RuntimeError(
+                f"env: environment variable '{self.var_name}' is not set"
+            )
+        context.variables[self.var_name] = val
