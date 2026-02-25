@@ -1,0 +1,9 @@
+# Example pipeline: adults grouped by country with a headcount.
+# Run with: python main.py pipelines/example.ppl
+
+source "data/people.csv"
+filter age > 18
+select name, age, country
+group by country
+count
+save "output/adults_by_country.csv"

@@ -1,0 +1,172 @@
+# Pipeline DSL
+
+A lightweight Python-based DSL (Domain-Specific Language) for writing declarative data pipelines. Define your data transformations in plain `.ppl` files and run them from the command line — no Python required to use.
+
+---
+
+## Example
+
+```
+# pipelines/example.ppl
+
+source "data/people.csv"
+filter age > 18
+select name, age, country
+group by country
+count
+save "output/adults_by_country.csv"
+```
+
+```
+ppl pipelines/example.ppl
+```
+
+```
+Loaded 6 command(s) from 'pipelines/example.ppl'.
+Parsed 6 AST node(s).
+
+Pipeline completed successfully.
+Output: 3 row(s) × 2 column(s).
+
+Preview (first 10 rows):
+country  count
+Germany      5
+    USA      5
+ France      2
+```
+
+---
+
+## Installation
+
+**Requirements:** Python 3.9+
+
+```bash
+# 1. Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+source .venv/bin/activate     # macOS / Linux
+
+# 2. Install the package (registers the ppl command)
+pip install -e .
+```
+
+---
+
+## Usage
+
+```bash
+ppl <pipeline_file.ppl>
+```
+
+Pipeline files should be placed in the `pipelines/` folder by convention, but any path works.
+
+---
+
+## Commands
+
+### `source`
+Load a CSV file into the pipeline.
+```
+source "data/people.csv"
+```
+
+### `filter`
+Filter rows by a column condition.  
+Supported operators: `>`, `<`, `>=`, `<=`, `==`, `!=`
+```
+filter age > 18
+filter country == "Germany"
+filter salary != 0
+```
+
+### `select`
+Keep only the specified columns (comma-separated).
+```
+select name, age, country
+```
+
+### `group by`
+Group rows by one or more columns. Must be followed by `count`.
+```
+group by country
+group by country, age
+```
+
+### `count`
+Count rows. When preceded by `group by`, counts per group.  
+Without grouping, returns the total row count.
+```
+count
+```
+
+### `save`
+Write the current data to a CSV file. Output directories are created automatically.
+```
+save "output/results.csv"
+```
+
+---
+
+## Comments
+
+Lines beginning with `#` are ignored, so you can annotate your pipelines freely.
+
+```
+# Load raw data
+source "data/sales.csv"
+
+# Only keep completed orders
+filter status == "completed"
+```
+
+---
+
+## Project Structure
+
+```
+pipeline_dsl/
+├── main.py           # CLI entry point
+├── file_reader.py    # Reads and cleans .ppl files
+├── ppl_parser.py     # Converts lines into AST nodes
+├── ast_nodes.py      # Node classes (one per command)
+├── executor.py       # Runs the pipeline node by node
+├── pyproject.toml    # Package config — registers the ppl command
+├── data/             # Input CSV files
+├── pipelines/        # .ppl pipeline definitions
+└── output/           # Generated output (auto-created)
+```
+
+### Architecture
+
+```
+.ppl file
+   │
+   ▼
+file_reader.py   →   cleaned list of lines
+   │
+   ▼
+ppl_parser.py    →   list of ASTNode objects
+   │
+   ▼
+executor.py      →   runs each node against PipelineContext
+   │
+   ▼
+output CSV
+```
+
+Each command maps to a node class in [ast_nodes.py](ast_nodes.py). Adding a new command means adding one class and one parser entry — nothing else changes.
+
+---
+
+## Error Handling
+
+The DSL provides clear error messages for common mistakes:
+
+| Problem | Example message |
+|---|---|
+| File not found | `[SourceNode] Source file not found: 'data/missing.csv'` |
+| Unknown column | `[FilterNode] column 'agee' not found. Available: ['name', 'age', ...]` |
+| Invalid command | `Line 3: unknown command 'sortby'. Supported commands: count, filter, ...` |
+| Missing `.ppl` extension | `Expected a .ppl file, got: 'data.csv'` |
+| Bad filter syntax | `Line 2: could not parse 'filter' condition 'age'. Expected: filter <column> <op> <value>` |

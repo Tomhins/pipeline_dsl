@@ -1,0 +1,7 @@
+# Simple pipeline: load, filter, select and save — no grouping.
+# Run with: python main.py data.ppl
+
+source "data/people.csv"
+filter age >= 25
+select name, age, country, salary
+save "output/senior_employees.csv"

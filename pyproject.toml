@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pipeline-dsl"
+version = "0.1.0"
+description = "A simple Python-based DSL for declarative data pipelines."
+requires-python = ">=3.9"
+dependencies = ["pandas"]
+
+[project.scripts]
+ppl = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "file_reader", "ast_nodes", "ppl_parser", "executor"]
