@@ -1,0 +1,14 @@
+# Tutorial 3: Filtering Rows
+# Keep only the rows you care about.
+# Run with: ppl tutorials/03_filtering.ppl
+
+source "data/people.csv"
+
+# Filter rows where age is 18 or older (adults only)
+filter age >= 18
+
+# Filter to a specific country
+filter country == "Germany"
+
+# Show result
+print

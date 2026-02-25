@@ -1,0 +1,26 @@
+# Tutorial 7: Data Quality — fill & assert
+# Handle missing values and validate your data.
+# Run with: ppl tutorials/07_fill_and_assert.ppl
+
+source "data/people.csv"
+
+inspect
+
+# --- fill: handle missing/empty values ---
+# Strategy options: mean, median, mode, forward, backward, drop
+# Or use a literal value: 0, "Unknown", etc.
+
+fill age mean          # fill missing ages with average
+fill country "Unknown" # fill missing country with literal string
+
+# --- assert: validate data, fail if condition is broken ---
+# This is like a data test — it stops the pipeline if rows violate the rule.
+
+# All ages must be positive
+assert age > 0
+
+# Filter to adults and check they all have a salary
+filter age >= 18
+assert salary > 0
+
+print

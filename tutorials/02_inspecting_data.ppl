@@ -1,0 +1,14 @@
+# Tutorial 2: Inspecting Your Data
+# Learn to understand the shape and content of your dataset.
+# Run with: ppl tutorials/02_inspecting_data.ppl
+
+source "data/people.csv"
+
+# schema: shows column names and their data types
+schema
+
+# inspect: detailed view — names, types, null counts, unique counts
+inspect
+
+# head: preview the first N rows without changing data
+head 5

@@ -1,0 +1,18 @@
+# Tutorial 8: Saving Output
+# Write results to CSV or JSON files.
+# Run with: ppl tutorials/08_saving_output.ppl
+
+source "data/people.csv"
+
+filter age >= 18
+select name, age, country, salary
+sort by salary desc
+
+# save to CSV
+save "output/tutorial_adults.csv"
+
+# save the same data to JSON
+save "output/tutorial_adults.json"
+
+# print also shows current data in the terminal
+print
