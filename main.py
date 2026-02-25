@@ -16,6 +16,7 @@ The script:
 
 from __future__ import annotations
 
+import os
 import sys
 
 from executor import run_pipeline
@@ -53,6 +54,12 @@ def main(argv: list[str] | None = None) -> int:
     if not lines:
         print(f"Warning: '{ppl_file}' contains no executable commands.")
         return 0
+
+    # Change working directory to the folder containing the .ppl file so
+    # that relative paths inside it (e.g. source "data/people.csv") resolve
+    # correctly regardless of where the ppl command was invoked from.
+    ppl_dir = os.path.dirname(os.path.abspath(ppl_file))
+    os.chdir(ppl_dir)
 
     print(f"Loaded {len(lines)} command(s) from '{ppl_file}'.")
 
