@@ -1,5 +1,8 @@
 # Pipeline DSL
 
+[![README](https://img.shields.io/badge/docs-README-blue)](https://github.com/Tomhins/pipeline_dsl/blob/main/README.md)
+[![GitHub](https://img.shields.io/badge/github-Tomhins%2Fpipeline__dsl-black?logo=github)](https://github.com/Tomhins/pipeline_dsl)
+
 A lightweight Python-based DSL (Domain-Specific Language) for writing declarative data pipelines. Define your data transformations in plain `.ppl` files and run them from the command line — no Python required to use.
 
 ---
