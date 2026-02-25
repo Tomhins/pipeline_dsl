@@ -15,7 +15,7 @@ Adds language support for `.ppl` pipeline files inside VS Code:
 ## Requirements
 
 The `ppl` command must be on your PATH before using this extension.  
-See the [main project README](../README.md) for setup instructions.
+See the [main project README](https://github.com/Tomhins/pipeline_dsl/blob/main/README.md) for setup instructions.
 
 ---
 
