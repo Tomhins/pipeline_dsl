@@ -218,7 +218,7 @@ Copy `dist\ppl.exe` to any folder on your PATH and the `ppl` command works every
 
 ## License
 
-Copyright (c) 2026. All rights reserved.
+Copyright (c) 2026 Tom Kremser. All rights reserved.
 
 This project and its source code are proprietary. You may view the source code
 but may not use, copy, modify, or distribute it without the author's explicit
