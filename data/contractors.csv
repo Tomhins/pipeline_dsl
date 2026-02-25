@@ -1,0 +1,4 @@
+id,name,age,country,department_id,salary,years_experience,performance_score,remote
+31,Ethan,29,USA,1,75000,6,83,yes
+32,Fiona,38,Germany,2,80000,13,88,no
+33,George,44,France,3,95000,19,90,yes
