@@ -65,3 +65,5 @@ vscode-ppl/out/
 .DS_Store
 Thumbs.db
 Desktop.ini
+data/youtube_shorts_tiktok_trends_2025.csv
+pipelines/clean_yt_tiktok.ppl
