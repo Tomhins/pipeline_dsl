@@ -20,7 +20,7 @@ from ast_nodes import ASTNode
 _CHUNK_SAFE_NODE_NAMES: frozenset[str] = frozenset([
     "FilterNode", "CompoundFilterNode", "SelectNode", "DropNode",
     "CastNode", "RenameNode", "TrimNode", "UppercaseNode", "LowercaseNode",
-    "AddNode", "AddIfNode", "ReplaceNode", "FillNode",
+    "AddNode", "AddIfNode", "ReplaceNode", "FillNode", "TimerNode",
 ])
 
 
@@ -84,7 +84,7 @@ def _run_chunked_pipeline(
             post_phase.append(node)
 
     chunks_out: list[pd.DataFrame] = []
-    for chunk_df in pd.read_csv(path, chunksize=source_node.chunk_size):
+    for chunk_df in pd.read_csv(path, chunksize=source_node.chunk_size, low_memory=False):
         chunk_ctx = PipelineContext(
             df=chunk_df,
             variables=dict(context.variables),
@@ -99,7 +99,7 @@ def _run_chunked_pipeline(
         if chunk_ctx.df is not None and not chunk_ctx.df.empty:
             chunks_out.append(chunk_ctx.df)
 
-    context.df = pd.concat(chunks_out, ignore_index=True) if chunks_out else pd.DataFrame()
+    context.df = pd.concat(chunks_out, ignore_index=True, copy=False) if chunks_out else pd.DataFrame()
     context.grouped = None
 
     for node in post_phase:

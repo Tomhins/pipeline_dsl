@@ -263,5 +263,29 @@
     "prefix": "env",
     "body": ["env ${1:VAR_NAME}"],
     "description": "Load an OS environment variable into the pipeline variable store"
+  },
+  "timer start": {
+    "prefix": "timerstart",
+    "body": ["timer start ${1:label}"],
+    "description": "Start a named timer"
+  },
+  "timer stop": {
+    "prefix": "timerstop",
+    "body": ["timer stop ${1:label}"],
+    "description": "Stop a named timer and print elapsed time"
+  },
+  "timer lap": {
+    "prefix": "timerlap",
+    "body": ["timer lap ${1:label}"],
+    "description": "Print a checkpoint time without stopping the timer"
+  },
+  "timer block": {
+    "prefix": "timerblock",
+    "body": [
+      "timer start ${1:label}",
+      "$2",
+      "timer stop ${1:label}"
+    ],
+    "description": "Wrap a block of commands with start/stop timers"
   }
 }

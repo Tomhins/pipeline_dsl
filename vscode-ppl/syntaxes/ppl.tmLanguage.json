@@ -31,7 +31,7 @@
           "name": "keyword.control.aggregate.ppl"
         },
         {
-          "match": "\\b(print|schema|inspect|head|assert|fill|log|set|env)\\b",
+          "match": "\\b(print|schema|inspect|head|assert|fill|log|set|env|timer)\\b",
           "name": "keyword.control.inspect.ppl"
         },
         {
@@ -43,7 +43,7 @@
           "name": "keyword.control.logic.ppl"
         },
         {
-          "match": "\\b(asc|desc|mean|median|mode|forward|backward|drop|inner|left|right|outer|chunk)\\b",
+          "match": "\\b(asc|desc|mean|median|mode|forward|backward|drop|inner|left|right|outer|chunk|start|stop|lap)\\b",
           "name": "keyword.other.modifier.ppl"
         },
         {

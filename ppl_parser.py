@@ -142,6 +142,7 @@ from ast_nodes import (
     SourceNode,
     SumNode,
     TrimNode,
+    TimerNode,
     TryNode,
     UppercaseNode,
 )
@@ -621,6 +622,33 @@ def _parse_log(args: str, line_no: int) -> LogNode:
     return LogNode(message=args.strip())
 
 
+def _parse_timer(args: str, line_no: int) -> TimerNode:
+    """Parse ``timer start|stop|lap [label]`` into a :class:`TimerNode`.
+
+    Examples::
+
+        timer start loading
+        timer lap   loading
+        timer stop  loading
+        timer start          # label defaults to "default"
+        timer stop
+    """
+    parts = args.strip().split()
+    if not parts:
+        raise SyntaxError(
+            f"Line {line_no}: 'timer' requires an action (start, stop, or lap). "
+            "Example: timer start loading"
+        )
+    action = parts[0].lower()
+    if action not in ("start", "stop", "lap"):
+        raise SyntaxError(
+            f"Line {line_no}: unknown timer action '{parts[0]}'. "
+            "Use: start, stop, or lap."
+        )
+    label = parts[1] if len(parts) > 1 else "default"
+    return TimerNode(action=action, label=label)
+
+
 def _parse_assert(args: str, line_no: int) -> AssertNode:
     """Parse ``assert <column> <op> <value>`` into an :class:`AssertNode`."""
     col, op, val = _parse_condition_tuple(args.strip(), line_no, "assert")
@@ -702,6 +730,7 @@ _PARSERS: dict[str, callable] = {
     "include":   _parse_include,
     "head":      _parse_head,
     "log":       _parse_log,
+    "timer":     _parse_timer,
     "assert":    _parse_assert,
     "fill":      _parse_fill,
     "set":       _parse_set,

@@ -156,7 +156,13 @@ class SourceNode(ASTNode):
                     "Install it with: pip install pyarrow"
                 )
         else:
-            context.df = pd.read_csv(path)
+            # Try pyarrow CSV engine first (3-6x faster than C engine for
+            # large files); fall back silently if the file has mixed-type
+            # columns that pyarrow can't classify.
+            try:
+                context.df = pd.read_csv(path, engine="pyarrow")
+            except Exception:
+                context.df = pd.read_csv(path, low_memory=False)
         context.grouped = None
 
 
@@ -432,7 +438,6 @@ class AddNode(ASTNode):
             raise RuntimeError("add: no data loaded — use 'source' first")
         try:
             expr = _substitute_vars(self.expression, context)
-            context.df = context.df.copy()
             context.df[self.column] = context.df.eval(expr)
         except Exception as exc:
             raise ValueError(
@@ -479,7 +484,6 @@ class AddIfNode(ASTNode):
             except ValueError:
                 return resolved
 
-        context.df = df.copy()
         context.df[self.column] = np.where(
             mask, _to_val(self.true_val), _to_val(self.false_val)
         )
@@ -500,7 +504,6 @@ class TrimNode(ASTNode):
                 f"trim: column '{self.column}' not found. "
                 f"Available: {list(context.df.columns)}"
             )
-        context.df = context.df.copy()
         context.df[self.column] = context.df[self.column].astype(str).str.strip()
         context.grouped = None
 
@@ -519,7 +522,6 @@ class UppercaseNode(ASTNode):
                 f"uppercase: column '{self.column}' not found. "
                 f"Available: {list(context.df.columns)}"
             )
-        context.df = context.df.copy()
         context.df[self.column] = context.df[self.column].astype(str).str.upper()
         context.grouped = None
 
@@ -538,7 +540,6 @@ class LowercaseNode(ASTNode):
                 f"lowercase: column '{self.column}' not found. "
                 f"Available: {list(context.df.columns)}"
             )
-        context.df = context.df.copy()
         context.df[self.column] = context.df[self.column].astype(str).str.lower()
         context.grouped = None
 
@@ -582,9 +583,7 @@ class CastNode(ASTNode):
                 f"cast: unknown type '{self.type_name}'. "
                 f"Supported: {', '.join(sorted(_CAST_TYPE_MAP))}"
             )
-        df = context.df.copy()
-        df[self.column] = _CAST_TYPE_MAP[t](df[self.column])
-        context.df = df
+        context.df[self.column] = _CAST_TYPE_MAP[t](context.df[self.column])
         context.grouped = None
 
 
@@ -607,11 +606,9 @@ class ReplaceNode(ASTNode):
                 f"replace: column '{self.column}' not found. "
                 f"Available: {list(context.df.columns)}"
             )
-        df = context.df.copy()
         old = _coerce_rhs(self.old_value)
         new = _coerce_rhs(self.new_value)
-        df[self.column] = df[self.column].replace(old, new)
-        context.df = df
+        context.df[self.column] = context.df[self.column].replace(old, new)
         context.grouped = None
 
 
@@ -1000,6 +997,55 @@ class LogNode(ASTNode):
         print(f"[LOG] {msg}")
 
 
+@dataclass
+class TimerNode(ASTNode):
+    """Start, stop, or lap a named timer to measure pipeline step durations.
+
+    Timer state is stored in ``context.variables`` so it persists for the
+    entire pipeline run.  The label is optional; omitting it uses ``default``.
+
+    Examples::
+
+        timer start loading
+        source "big.csv" chunk 50000
+        timer stop loading          # prints: [TIMER] loading: 3.42s
+
+        timer start                 # label defaults to "default"
+        filter age > 18
+        timer lap                   # checkpoint — keeps the timer running
+        sort by salary desc
+        timer stop                  # prints total elapsed
+    """
+
+    action: str   # "start" | "stop" | "lap"
+    label: str    # name for this timer; defaults to "default"
+
+    def execute(self, context: "PipelineContext") -> None:
+        import time
+        key = f"__timer_{self.label}"
+        if self.action == "start":
+            context.variables[key] = time.perf_counter()
+        elif self.action in ("stop", "lap"):
+            t0 = context.variables.get(key)
+            if t0 is None:
+                raise RuntimeError(
+                    f"timer: no timer named '{self.label}' is running. "
+                    "Use 'timer start <label>' first."
+                )
+            elapsed = time.perf_counter() - t0
+            mins = int(elapsed // 60)
+            secs = elapsed % 60
+            formatted = f"{mins}m {secs:.3f}s" if mins else f"{secs:.3f}s"
+            tag = "LAP" if self.action == "lap" else "TIMER"
+            print(f"[{tag}] {self.label}: {formatted}")
+            if self.action == "stop":
+                del context.variables[key]
+        else:
+            raise ValueError(
+                f"timer: unknown action '{self.action}'. Use start, stop, or lap."
+            )
+
+
 # ---------------------------------------------------------------------------
 # Quality / validation nodes
 # ---------------------------------------------------------------------------
@@ -1053,26 +1099,26 @@ class FillNode(ASTNode):
                 f"fill: column '{self.column}' not found. "
                 f"Available: {list(context.df.columns)}"
             )
-        df = context.df.copy()
-        df[self.column] = df[self.column].replace("", pd.NA)
+        col = self.column
+        context.df[col] = context.df[col].replace("", pd.NA)
         s = self.strategy.strip().lower()
 
         if s == "mean":
-            df[self.column] = pd.to_numeric(df[self.column], errors="coerce")
-            df[self.column] = df[self.column].fillna(df[self.column].mean())
+            context.df[col] = pd.to_numeric(context.df[col], errors="coerce")
+            context.df[col] = context.df[col].fillna(context.df[col].mean())
         elif s == "median":
-            df[self.column] = pd.to_numeric(df[self.column], errors="coerce")
-            df[self.column] = df[self.column].fillna(df[self.column].median())
+            context.df[col] = pd.to_numeric(context.df[col], errors="coerce")
+            context.df[col] = context.df[col].fillna(context.df[col].median())
         elif s == "mode":
-            mode_val = df[self.column].mode()
+            mode_val = context.df[col].mode()
             if not mode_val.empty:
-                df[self.column] = df[self.column].fillna(mode_val[0])
+                context.df[col] = context.df[col].fillna(mode_val[0])
         elif s == "forward":
-            df[self.column] = df[self.column].ffill()
+            context.df[col] = context.df[col].ffill()
         elif s == "backward":
-            df[self.column] = df[self.column].bfill()
+            context.df[col] = context.df[col].bfill()
         elif s == "drop":
-            df = df.dropna(subset=[self.column]).reset_index(drop=True)
+            context.df = context.df.dropna(subset=[col]).reset_index(drop=True)
         else:
             raw = self.strategy.strip("\"'")
             try:
@@ -1081,9 +1127,8 @@ class FillNode(ASTNode):
                     fill_val = int(fill_val)
             except ValueError:
                 fill_val = raw
-            df[self.column] = df[self.column].fillna(fill_val)
+            context.df[col] = context.df[col].fillna(fill_val)
 
-        context.df = df
         context.grouped = None
 
 

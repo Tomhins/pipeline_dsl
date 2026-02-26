@@ -22,6 +22,12 @@
 13. [Comments & Best Practices](#13-comments--best-practices)
 14. [Capstone Project](#14-capstone-project)
 15. [Advanced Features](#15-advanced-features)
+    - [Parquet files](#parquet-files)
+    - [Chunked streaming](#chunked-streaming--source--chunk-n)
+    - [Join types](#join-types--inner-left-right-outer)
+    - [Sandbox mode](#sandbox-mode--set-sandbox--dir)
+    - [Error recovery](#error-recovery--try--on_error)
+    - [Timing pipelines](#timing-pipelines--timer)
 16. [Quick Reference Card](#16-quick-reference-card)
 
 ---
@@ -873,6 +879,85 @@ If the commands inside `try` succeed, the `on_error` handler is never called.
 
 ---
 
+### Timing pipelines — `timer`
+
+`timer` lets you measure how long parts of your pipeline take. Results are printed
+to the terminal and never affect the data.
+
+```
+timer start <label>    # start a named stopwatch
+timer stop <label>     # stop it and print elapsed time
+timer lap <label>      # print elapsed time without stopping
+```
+
+The label is optional — leave it out to use the default label `default`.
+
+**Basic example:**
+
+```
+timer start load
+source "data/big.csv" chunk 50000
+filter status == "active"
+timer stop load
+```
+
+Output:
+```
+[TIMER] load: 3.217s
+```
+
+**Timing multiple phases independently:**
+
+```
+timer start total
+
+timer start ingest
+source "data/sales.csv" chunk 100000
+timer stop ingest
+
+timer start transform
+filter amount > 0
+group by region
+sum amount
+timer stop transform
+
+timer stop total
+```
+
+Output:
+```
+[TIMER] ingest: 4.102s
+[TIMER] transform: 0.341s
+[TIMER] total: 4.451s
+```
+
+Use `timer lap` to mark intermediate progress without stopping the timer:
+
+```
+timer start etl
+source "data/events.csv"
+timer lap etl
+filter event_type == "click"
+timer lap etl
+group by page
+count
+timer stop etl
+```
+
+Output:
+```
+[LAP] etl: 1.203s
+[LAP] etl: 1.387s
+[TIMER] etl: 1.412s
+```
+
+For durations over a minute the output is formatted as `Xm Y.ZZZs` (e.g. `1m 4.812s`).
+
+You can run any number of independently-named timers at the same time — each
+label is tracked separately.
+
+---
+
 ## 16. Quick Reference Card
 
 ```
@@ -891,6 +976,9 @@ schema                         # column names + types
 inspect                        # names, types, nulls, unique counts
 head N                         # print first N rows (non-destructive)
 print                          # print all rows
+timer start label              # start a named stopwatch
+timer lap label                # print elapsed without stopping
+timer stop label               # stop and print elapsed time
 
 # ── FILTERING ────────────────────────────────────
 filter col > value             # operators: > < >= <= == !=

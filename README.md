@@ -364,6 +364,14 @@ log "Processing complete"
 log "Loaded data for $label"
 ```
 
+### `timer`
+Measure elapsed time between pipeline steps. See the [timer section](#timer) above for full details.
+```
+timer start label
+timer stop label
+timer lap label
+```
+
 ---
 
 ## Inspection
@@ -571,7 +579,7 @@ The `vscode-ppl/` folder contains a VS Code extension that adds syntax highlight
 ```powershell
 cd vscode-ppl
 "y" | vsce package --no-dependencies
-code --install-extension vscode-ppl-1.0.0.vsix
+code --install-extension vscode-ppl-1.1.0.vsix
 ```
 Then reload VS Code (`Ctrl+Shift+P` → `Developer: Reload Window`).
 
@@ -588,7 +596,7 @@ See [vscode-ppl/README.md](vscode-ppl/README.md) for full details and update ins
 ```powershell
 cd vscode-ppl
 "y" | vsce package --no-dependencies
-code --install-extension vscode-ppl-<version>.vsix
+code --install-extension vscode-ppl-1.1.0.vsix
 ```
 
 ---
