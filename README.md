@@ -27,6 +27,7 @@ A lightweight Python-based DSL (Domain-Specific Language) for writing declarativ
   - [Error Recovery](#error-recovery) — `try` / `on_error`
   - [Timing & Logging](#timing--logging) — `timer`, `log`
   - [Comments](#comments)
+- [Timestamp Commands](#timestamp-commands) — `parse_date`, `extract`, `date_diff`, `filter_date`, `truncate_date`, `ts_sort`
 - [Advanced Features](#advanced-features)
   - [Variable Substitution](#variable-substitution)
   - [Chunked Streaming](#chunked-streaming)
@@ -34,7 +35,6 @@ A lightweight Python-based DSL (Domain-Specific Language) for writing declarativ
 - [Architecture](#architecture)
 - [Error Reference](#error-reference)
 - [VS Code Extension](#vs-code-extension)
-- [Building a Standalone Exe](#building-a-standalone-exe)
 - [License](#license)
 
 ---
@@ -76,6 +76,14 @@ Germany      5
 
 **Requirements:** Python 3.9+
 
+**Quick setup (Windows — recommended):**
+```powershell
+.\setup.ps1                    # create venv + install package
+.\setup.ps1 -InstallExtension  # also install the VS Code extension
+.\setup.ps1 -Force             # wipe and recreate the venv first
+```
+
+**Manual setup:**
 ```bash
 # 1. Create and activate a virtual environment
 python -m venv .venv
@@ -528,76 +536,6 @@ ts_sort order_date
 
 ---
 
-## Timestamp Commands
-
-Pipeline DSL includes a suite of commands for working with date and time data. Columns must be in Polars `Datetime` format — use `parse_date` to convert a string column first.
-
-### `parse_date`
-Parse a string column into a datetime type using a [strftime](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes) format string.
-
-```
-parse_date created_at "%Y-%m-%d"
-parse_date event_time "%d/%m/%Y %H:%M:%S"
-```
-
-### `extract`
-Extract a single date/time component from a datetime column into a new integer column.
-
-| Part | Description |
-|---|---|
-| `year` | Calendar year (e.g. 2024) |
-| `month` | Month number 1–12 |
-| `day` | Day of month 1–31 |
-| `hour` | Hour 0–23 |
-| `minute` | Minute 0–59 |
-| `second` | Second 0–59 |
-| `weekday` | Day of week, 0 = Monday … 6 = Sunday |
-| `quarter` | Calendar quarter 1–4 |
-
-```
-extract year from order_date as order_year
-extract month from event_time as event_month
-```
-
-### `date_diff`
-Compute the signed difference between two datetime columns and store the result in a new integer column.
-
-```
-date_diff end_date start_date as duration_days in days
-date_diff checkout checkin as stay_hours in hours
-```
-
-Units: `days` · `hours` · `minutes` · `seconds`
-
-### `filter_date`
-Filter rows by comparing a datetime column to a literal ISO date (`YYYY-MM-DD`).
-
-```
-filter_date order_date >= 2024-01-01
-filter_date event_time < 2025-06-01
-```
-
-Operators: `>` `<` `>=` `<=` `==`
-
-### `truncate_date`
-Truncate a datetime column to the given precision, zeroing out finer time components.
-
-```
-truncate_date order_date to month   # 2024-03-15 → 2024-03-01
-truncate_date event_time to hour    # 2024-03-15 14:37:22 → 2024-03-15 14:00:00
-```
-
-Units: `year` · `month` · `week` · `day` · `hour` · `minute` · `second`
-
-### `ts_sort`
-Sort the pipeline by a datetime column in ascending (chronological) order.
-
-```
-ts_sort order_date
-```
-
----
-
 ### Variables & Environment
 
 #### `set`
@@ -833,13 +771,13 @@ file_reader.py   →   cleaned list of lines
 ppl_parser.py    →   list of ASTNode objects
    │
    ▼
-executor.py      →   runs each node against PipelineContext
+executor.py      →   runs each node against PipelineContext (Polars LazyFrame)
    │
    ▼
 output CSV / JSON / Parquet
 ```
 
-Each command maps to a node class in [ast_nodes.py](ast_nodes.py). Adding a new command means adding one class and one parser entry — nothing else changes.
+The engine is built on [Polars](https://pola.rs/), a fast DataFrame library backed by Apache Arrow. Each command maps to a node class in [ast_nodes.py](ast_nodes.py). Adding a new command means adding one class and one parser entry — nothing else changes.
 
 ### Project Structure
 
@@ -849,11 +787,12 @@ pipeline_dsl/
 ├── file_reader.py    # Reads and cleans .ppl files
 ├── ppl_parser.py     # Converts lines into AST nodes
 ├── ast_nodes.py      # Node classes (one per command)
-├── executor.py       # Runs the pipeline node by node
+├── executor.py       # Runs the pipeline node by node (Polars LazyFrame)
 ├── pyproject.toml    # Package config — registers the ppl command
+├── setup.ps1         # Windows dev-environment setup script
 ├── data/             # Sample input CSV files
 ├── pipelines/        # .ppl pipeline definitions and examples
-├── tutorials/        # Progressive tutorial .ppl files (01–09)
+├── tutorials/        # Progressive tutorial .ppl files (01–10)
 └── output/           # Generated output (auto-created on first save)
 ```
 
@@ -895,19 +834,6 @@ code --install-extension vscode-ppl-1.1.0.vsix
 Then reload VS Code (`Ctrl+Shift+P` → `Developer: Reload Window`).
 
 See [vscode-ppl/README.md](vscode-ppl/README.md) for full details and update instructions.
-
----
-
-## Building a Standalone Exe
-
-To produce a `ppl.exe` that works on any Windows machine with no Python installed:
-
-```powershell
-.\build_exe.ps1
-# Output: dist\ppl.exe
-```
-
-Copy `dist\ppl.exe` to any folder on your PATH and the `ppl` command works everywhere.
 
 ---
 
