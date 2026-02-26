@@ -1,3 +1,27 @@
+"""File reader for the pipeline DSL.
+
+Reads a ``.ppl`` pipeline file from disk and returns a clean list of
+executable lines, stripping blank lines and comments so the parser only ever
+sees meaningful content.
+
+Typical usage::
+
+    from file_reader import read_ppl_file
+
+    lines = read_ppl_file("pipelines/example.ppl")
+    # → ['source "data/people.csv"', 'filter age > 18', ...]
+
+Comment syntax
+--------------
+* **Full-line comments** — a line that starts with ``#`` after stripping
+  whitespace is discarded entirely.
+* **Inline comments** — ``# ...`` that follow at least one whitespace
+  character are trimmed from the end of the line.  This lets ``#`` appear
+  as part of an unquoted value without being mistaken for a comment
+  (e.g. ``replace col "#tag" ""``)  since such occurrences are not preceded
+  by whitespace.
+"""
+
 import os
 import re
 import sys
