@@ -1,0 +1,43 @@
+# Variables & Environment — Pipeline DSL example
+#
+# Demonstrates: set, env, $variable substitution, sandbox mode
+# Run with: ppl pipelines/variables.ppl
+#
+# The working directory is changed to the pipelines/ folder when this
+# file runs, so "../data/" refers to the project-level data/ directory.
+
+# ── 1. Set pipeline variables ────────────────────────────────────────────────
+set input_file  = ../data/people.csv
+set min_salary  = 40000
+set output_file = ../output/variables_example.csv
+set label       = High earners
+
+# ── 2. Load data using a variable path ───────────────────────────────────────
+log "Loading data from $input_file"
+source "$input_file"
+
+# ── 3. Quick data check ───────────────────────────────────────────────────────
+schema
+
+# ── 4. Filter using a variable value ─────────────────────────────────────────
+# Instead of hard-coding 40000, we reference $min_salary — changing the
+# variable at the top of the file changes the behaviour everywhere it's used.
+filter salary > $min_salary
+
+# ── 5. Add a computed column that also uses a variable ────────────────────────
+set tax_rate = 0.2
+add tax = salary * $tax_rate
+add net  = salary - tax
+
+# ── 6. Log progress using variable substitution ───────────────────────────────
+log "Filtered to $label (salary > $min_salary)"
+
+# ── 7. Sort and preview ───────────────────────────────────────────────────────
+sort by salary desc
+head 5
+
+# ── 8. Save using a variable path ─────────────────────────────────────────────
+log "Saving output to $output_file"
+save "$output_file"
+
+print

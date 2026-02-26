@@ -1,0 +1,60 @@
+# Error Handling & Data Quality — Pipeline DSL example
+#
+# Demonstrates: fill, assert, try/on_error (skip, log, recovery command)
+# Run with: ppl pipelines/error_handling.ppl
+
+# ── 1. Load raw, potentially messy data ──────────────────────────────────────
+source "../data/people.csv"
+inspect   # show null counts and unique values before cleaning
+
+# ── 2. Fill missing values before any assertions ─────────────────────────────
+# fill with a literal value (string)
+fill country "Unknown"
+# fill with the column mean (numeric — coerces non-numeric to NaN first)
+fill salary 0
+
+# ── 3. Basic assertions — fail the pipeline if violated ──────────────────────
+# assert checks every row; if any row fails, the pipeline stops with a
+# clear message: "[AssertNode] assert: N row(s) failed condition 'age > 0'"
+assert age > 0
+
+# ── 4. try / on_error — skip ──────────────────────────────────────────────────
+# Use 'skip' when you want to silently ignore a failure and move on.
+# Here we attempt a strict salary check that might fail on edge-case data;
+# if it does, we simply continue without stopping the pipeline.
+try
+    assert salary >= 0
+on_error skip
+
+# ── 5. try / on_error — log message ──────────────────────────────────────────
+# Use 'log "message"' to record that an error occurred without crashing.
+try
+    cast age int
+on_error log "age column could not be cast to int — continuing with original type"
+
+# ── 6. try / on_error — recovery command ─────────────────────────────────────
+# Use any valid pipeline command as the handler.
+# If the cast below fails (e.g. non-numeric values in salary), we fill with 0.
+try
+    cast salary float
+on_error fill salary 0
+
+# ── 7. Nested try blocks ──────────────────────────────────────────────────────
+# Inner failures are caught by the inner handler; only unhandled errors
+# bubble up to the outer handler.
+try
+    try
+        assert country != "Unknown"
+    on_error log "some rows have unknown country — not critical"
+    filter age >= 18
+on_error log "adult filter step failed — check input data"
+
+# ── 8. count if — non-destructive counting ────────────────────────────────────
+# count if prints a count without filtering or modifying the data.
+count if salary > 50000
+count if country == "Unknown"
+
+# ── 9. Final validated output ─────────────────────────────────────────────────
+sort by salary desc
+head 10
+save "../output/error_handling_example.csv"

@@ -1,0 +1,44 @@
+# Aggregation — Pipeline DSL example
+#
+# Demonstrates: group by, count, sum, avg, min, max, agg (multi), count if
+# Run with: ppl pipelines/aggregations.ppl
+
+source "../data/people.csv"
+
+# ── 1. Simple totals (no group by) ───────────────────────────────────────────
+log "--- Total stats ---"
+count          # total row count
+count if age >= 18    # non-destructive conditional count (data unchanged)
+count if salary > 50000
+
+# ── 2. Single-column aggregations per group ───────────────────────────────────
+log "--- Average salary by country ---"
+source "../data/people.csv"
+group by country
+avg salary
+
+sort by country asc
+print
+
+# ── 3. Multiple aggregations at once with agg ─────────────────────────────────
+log "--- Full summary by country ---"
+source "../data/people.csv"
+fill salary 0    # treat missing salary as 0 before aggregating
+group by country
+agg sum salary, avg salary, min salary, max salary, count
+
+sort by country asc
+print
+
+# ── 4. Multi-column group by ──────────────────────────────────────────────────
+log "--- Count per country + age bracket ---"
+source "../data/people.csv"
+add bracket = if age >= 18 then "adult" else "minor"
+group by country, bracket
+count
+
+sort by country asc, bracket asc
+print
+
+# ── 5. Save final summary ─────────────────────────────────────────────────────
+save "../output/aggregations_example.csv"

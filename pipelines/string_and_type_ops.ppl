@@ -1,0 +1,41 @@
+# String & Type Operations — Pipeline DSL example
+#
+# Demonstrates: trim, uppercase, lowercase, replace, cast, add (if/then/else)
+# Run with: ppl pipelines/string_and_type_ops.ppl
+
+source "../data/people.csv"
+
+# ── 1. Inspect raw types first ────────────────────────────────────────────────
+schema
+
+# ── 2. String cleaning ────────────────────────────────────────────────────────
+# trim removes leading/trailing whitespace that may have crept in from CSV
+trim name
+trim country
+
+# Normalise country to uppercase so "germany", "Germany", "GERMANY" all match
+uppercase country
+
+# Standardise a value: rename the column's value for consistency
+replace country GERMANY DE
+replace country USA US
+replace country FRANCE FR
+
+# ── 3. Type casting ───────────────────────────────────────────────────────────
+# Cast age and salary from whatever pandas inferred to explicit numeric types
+cast age    int
+cast salary float
+
+# ── 4. Lowercase for email-like fields (if the column existed) ────────────────
+# lowercase email    # uncomment if your data has an 'email' column
+
+# ── 5. Conditional column using if / then / else ──────────────────────────────
+add age_group  = if age >= 18 then "adult" else "minor"
+add salary_tier = if salary >= 60000 then "high" else "standard"
+
+# ── 6. Inspect the cleaned result ────────────────────────────────────────────
+schema   # confirm age is now int, salary is float
+head 10
+
+# ── 7. Save ───────────────────────────────────────────────────────────────────
+save "../output/string_and_type_ops_example.csv"
