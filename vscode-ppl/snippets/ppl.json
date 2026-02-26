@@ -287,5 +287,35 @@
       "timer stop ${1:label}"
     ],
     "description": "Wrap a block of commands with start/stop timers"
+  },
+  "parse_date": {
+    "prefix": "parse_date",
+    "body": ["parse_date ${1:column} \"${2:%Y-%m-%d}\""],
+    "description": "Parse a string column into a datetime using a strftime format"
+  },
+  "extract": {
+    "prefix": "extract",
+    "body": ["extract ${1|year,month,day,hour,minute,second,weekday,quarter|} from ${2:datetime_col} as ${3:new_col}"],
+    "description": "Extract a date/time component from a datetime column"
+  },
+  "date_diff": {
+    "prefix": "date_diff",
+    "body": ["date_diff ${1:end_col} ${2:start_col} as ${3:duration} in ${4|days,hours,minutes,seconds|}"],
+    "description": "Compute the difference between two datetime columns"
+  },
+  "filter_date": {
+    "prefix": "filter_date",
+    "body": ["filter_date ${1:datetime_col} ${2|>=,<=,>,<,==|} ${3:2024-01-01}"],
+    "description": "Filter rows by comparing a datetime column to a literal date"
+  },
+  "truncate_date": {
+    "prefix": "truncate_date",
+    "body": ["truncate_date ${1:datetime_col} to ${2|year,month,week,day,hour,minute,second|}"],
+    "description": "Truncate a datetime column to the given precision"
+  },
+  "ts_sort": {
+    "prefix": "ts_sort",
+    "body": ["ts_sort ${1:datetime_col}"],
+    "description": "Sort the pipeline chronologically by a datetime column"
   }
 }

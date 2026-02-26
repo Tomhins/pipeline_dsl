@@ -111,10 +111,13 @@ from ast_nodes import (
     CompoundFilterNode,
     CountIfNode,
     CountNode,
+    DateDiffNode,
     DistinctNode,
     DropNode,
     EnvNode,
+    ExtractNode,
     FillNode,
+    FilterDateNode,
     FilterNode,
     ForeachNode,
     GroupByNode,
@@ -129,6 +132,7 @@ from ast_nodes import (
     MergeNode,
     MinNode,
     MultiAggNode,
+    ParseDateNode,
     PivotNode,
     PrintNode,
     RenameNode,
@@ -141,9 +145,11 @@ from ast_nodes import (
     SortNode,
     SourceNode,
     SumNode,
-    TrimNode,
     TimerNode,
+    TrimNode,
+    TruncateDateNode,
     TryNode,
+    TsSortNode,
     UppercaseNode,
 )
 
@@ -696,6 +702,110 @@ def _parse_env(args: str, line_no: int) -> EnvNode:
 
 
 # ---------------------------------------------------------------------------
+# Timestamp / date-time command parsers  (Task 2)
+# ---------------------------------------------------------------------------
+
+def _parse_parse_date(args: str, line_no: int) -> ParseDateNode:
+    """Parse ``parse_date <column> <format>`` into a :class:`ParseDateNode`.
+
+    Examples::
+
+        parse_date order_date "%Y-%m-%d"
+        parse_date timestamp "%d/%m/%Y %H:%M:%S"
+    """
+    args = args.strip()
+    m = re.match(r'^(\S+)\s+["\'](.+)["\']$', args)
+    if not m:
+        raise SyntaxError(
+            f"Line {line_no}: 'parse_date' requires a column name and a quoted "
+            'format string. Example: parse_date order_date "%Y-%m-%d"'
+        )
+    return ParseDateNode(column=m.group(1), format=m.group(2))
+
+
+def _parse_extract(args: str, line_no: int) -> ExtractNode:
+    """Parse ``extract <part> from <column> as <new_column>``.
+
+    Supported parts: year, month, day, hour, minute, second, weekday, quarter.
+    """
+    m = re.match(
+        r'^(\w+)\s+from\s+(\S+)\s+as\s+(\S+)$', args.strip(), re.IGNORECASE
+    )
+    if not m:
+        raise SyntaxError(
+            f"Line {line_no}: 'extract' requires: "
+            "extract <part> from <column> as <new_column>. "
+            "Example: extract year from order_date as order_year"
+        )
+    return ExtractNode(
+        part=m.group(1).lower(),
+        column=m.group(2),
+        new_column=m.group(3),
+    )
+
+
+def _parse_date_diff(args: str, line_no: int) -> DateDiffNode:
+    """Parse ``date_diff <col1> <col2> as <new_column> in <unit>``."""
+    m = re.match(
+        r'^(\S+)\s+(\S+)\s+as\s+(\S+)\s+in\s+(\S+)$',
+        args.strip(),
+        re.IGNORECASE,
+    )
+    if not m:
+        raise SyntaxError(
+            f"Line {line_no}: 'date_diff' requires: "
+            "date_diff <col1> <col2> as <new_col> in <unit>. "
+            "Example: date_diff shipped_date order_date as days_to_ship in days"
+        )
+    return DateDiffNode(
+        col1=m.group(1),
+        col2=m.group(2),
+        new_column=m.group(3),
+        unit=m.group(4).lower(),
+    )
+
+
+def _parse_filter_date(args: str, line_no: int) -> FilterDateNode:
+    """Parse ``filter_date <column> <operator> <YYYY-MM-DD>``."""
+    args = args.strip()
+    for op in [">=", "<=", "==", ">", "<"]:
+        idx = args.find(op)
+        if idx != -1:
+            column = args[:idx].strip()
+            date_str = args[idx + len(op):].strip()
+            if column and date_str:
+                return FilterDateNode(column=column, operator=op, date_str=date_str)
+    raise SyntaxError(
+        f"Line {line_no}: 'filter_date' requires: "
+        "filter_date <column> <operator> <YYYY-MM-DD>. "
+        "Example: filter_date order_date >= 2024-01-01"
+    )
+
+
+def _parse_truncate_date(args: str, line_no: int) -> TruncateDateNode:
+    """Parse ``truncate_date <column> to <unit>``."""
+    m = re.match(r'^(\S+)\s+to\s+(\S+)$', args.strip(), re.IGNORECASE)
+    if not m:
+        raise SyntaxError(
+            f"Line {line_no}: 'truncate_date' requires: "
+            "truncate_date <column> to <unit>. "
+            "Example: truncate_date order_date to month"
+        )
+    return TruncateDateNode(column=m.group(1), unit=m.group(2).lower())
+
+
+def _parse_ts_sort(args: str, line_no: int) -> TsSortNode:
+    """Parse ``ts_sort <column>`` into a :class:`TsSortNode`."""
+    col = args.strip()
+    if not col:
+        raise SyntaxError(
+            f"Line {line_no}: 'ts_sort' requires a column name. "
+            "Example: ts_sort order_date"
+        )
+    return TsSortNode(column=col)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -733,8 +843,14 @@ _PARSERS: dict[str, callable] = {
     "timer":     _parse_timer,
     "assert":    _parse_assert,
     "fill":      _parse_fill,
-    "set":       _parse_set,
-    "env":       _parse_env,
+    "set":           _parse_set,
+    "env":           _parse_env,
+    "parse_date":    _parse_parse_date,
+    "extract":       _parse_extract,
+    "date_diff":     _parse_date_diff,
+    "filter_date":   _parse_filter_date,
+    "truncate_date": _parse_truncate_date,
+    "ts_sort":       _parse_ts_sort,
 }
 
 # Commands that take no arguments

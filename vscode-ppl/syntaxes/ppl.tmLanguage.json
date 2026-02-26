@@ -27,6 +27,10 @@
           "name": "keyword.control.transform.ppl"
         },
         {
+          "match": "\\b(parse_date|extract|date_diff|filter_date|truncate_date|ts_sort)\\b",
+          "name": "keyword.control.timestamp.ppl"
+        },
+        {
           "match": "\\b(sum|avg|min|max|agg)\\b",
           "name": "keyword.control.aggregate.ppl"
         },
@@ -44,6 +48,10 @@
         },
         {
           "match": "\\b(asc|desc|mean|median|mode|forward|backward|drop|inner|left|right|outer|chunk|start|stop|lap)\\b",
+          "name": "keyword.other.modifier.ppl"
+        },
+        {
+          "match": "\\b(from|as|in|to|year|month|day|hour|minute|second|weekday|quarter|days|hours|minutes|seconds|week)\\b",
           "name": "keyword.other.modifier.ppl"
         },
         {

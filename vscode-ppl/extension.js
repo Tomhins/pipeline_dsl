@@ -47,6 +47,13 @@ const COMMAND_DOCS = {
     on_error:  '`on_error <action>`\n\nError handler for a `try` block. Actions: `skip`, `log "message"`, or any pipeline command.',
     skip:      'Used with `on_error skip` to silently swallow errors from a `try` block.',
     chunk:     'Used with `source` to enable chunked streaming: `source "file.csv" chunk 100000`',
+    // ── Timestamp commands ──────────────────────────────────────────────────
+    parse_date:    '`parse_date <column> "<format>"`\n\nParse a string column into a datetime type using a strftime-style format string.\n\nExamples:\n```\nparse_date created_at "%Y-%m-%d"\nparse_date event_time "%d/%m/%Y %H:%M:%S"\n```',
+    extract:       '`extract <part> from <column> as <new_column>`\n\nExtract a single date/time component from a datetime column into a new integer column.\n\nParts: `year` `month` `day` `hour` `minute` `second` `weekday` `quarter`\n\nExample: `extract year from order_date as order_year`',
+    date_diff:     '`date_diff <col1> <col2> as <new_column> in <unit>`\n\nCompute the signed difference between two datetime columns and store the result in a new integer column.\n\nUnits: `days` `hours` `minutes` `seconds`\n\nExample: `date_diff end_date start_date as duration_days in days`',
+    filter_date:   '`filter_date <column> <operator> <YYYY-MM-DD>`\n\nFilter rows by comparing a datetime column to a literal ISO date.\n\nOperators: `>` `<` `>=` `<=` `==`\n\nExample: `filter_date order_date >= 2024-01-01`',
+    truncate_date: '`truncate_date <column> to <unit>`\n\nTruncate a datetime column to the given precision, zeroing out finer components.\n\nUnits: `year` `month` `week` `day` `hour` `minute` `second`\n\nExample: `truncate_date order_date to month`',
+    ts_sort:       '`ts_sort <column>`\n\nSort the pipeline by a datetime column in ascending (chronological) order.\n\nExample: `ts_sort event_time`',
     inner:     'Join type: only rows with matching keys in both files (default for `join`).',
     left:      'Join type: all left rows; nulls for unmatched right rows.',
     right:     'Join type: all right rows; nulls for unmatched left rows.',
@@ -54,6 +61,11 @@ const COMMAND_DOCS = {
     // modifiers / keywords
     by:        'Used with `group by` and `sort by`.',
     on:        'Used with `join … on <column>`.',
+    from:      'Used with `extract <part> from <column> as <new_column>`.',
+    as:        'Used with `extract` and `date_diff` to name the output column.',
+    in:        'Used with `date_diff … in <unit>` to specify the time unit.',
+    to:        'Used with `truncate_date <column> to <unit>`.',
+    // sort directions
     asc:       'Sort direction: ascending (default).',
     desc:      'Sort direction: descending.',
     and:       'Logical AND for compound `filter`/`where` conditions.',
@@ -61,16 +73,33 @@ const COMMAND_DOCS = {
     if:        'Used in `add <col> = if <cond> then <val> else <val>`.',
     then:      'Used in `add <col> = if <cond> then <val> else <val>`.',
     else:      'Used in `add <col> = if <cond> then <val> else <val>`.',
+    // fill strategies
     mean:      'Fill strategy: replace nulls with the column mean.',
     median:    'Fill strategy: replace nulls with the column median.',
     mode:      'Fill strategy: replace nulls with the column mode.',
     forward:   'Fill strategy: forward-fill (propagate last valid value).',
     backward:  'Fill strategy: backward-fill.',
+    // cast types
     int:       'Cast type: integer.',
     float:     'Cast type: floating-point number.',
     str:       'Cast type: string.',
     datetime:  'Cast type: datetime.',
     bool:      'Cast type: boolean.',
+    // date/time parts (extract)
+    year:      'Date part for `extract`: calendar year.',
+    month:     'Date part for `extract`: month (1–12).',
+    day:       'Date part for `extract`: day of month (1–31).',
+    hour:      'Date part for `extract`: hour (0–23).',
+    minute:    'Date part for `extract`: minute (0–59).',
+    second:    'Date part for `extract`: second (0–59).',
+    weekday:   'Date part for `extract`: day of week (0=Monday … 6=Sunday).',
+    quarter:   'Date part for `extract`: calendar quarter (1–4).',
+    // date_diff / truncate units
+    days:      'Time unit for `date_diff`: difference in whole days.',
+    hours:     'Time unit for `date_diff`: difference in whole hours.',
+    minutes:   'Time unit for `date_diff`: difference in whole minutes.',
+    seconds:   'Time unit for `date_diff`: difference in whole seconds.',
+    week:      'Truncation unit for `truncate_date`: truncate to the start of the week.',
 };
 
 /**

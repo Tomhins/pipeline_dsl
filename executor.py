@@ -6,141 +6,129 @@ and :func:`run_pipeline` (the entry point that drives execution).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
-import pandas as pd
+import polars as pl
 
 from ast_nodes import ASTNode
 
+
 # ---------------------------------------------------------------------------
-# Node class names that are safe to apply independently on each chunk.
-# These operate row-by-row and do not require the full dataset.
+# LazyFrame conversion helper
 # ---------------------------------------------------------------------------
-_CHUNK_SAFE_NODE_NAMES: frozenset[str] = frozenset([
-    "FilterNode", "CompoundFilterNode", "SelectNode", "DropNode",
-    "CastNode", "RenameNode", "TrimNode", "UppercaseNode", "LowercaseNode",
-    "AddNode", "AddIfNode", "ReplaceNode", "FillNode", "TimerNode",
-])
+
+def _to_lazy(df: Any) -> pl.LazyFrame:
+    """Convert a pandas or Polars DataFrame to a :class:`polars.LazyFrame`."""
+    if isinstance(df, pl.LazyFrame):
+        return df
+    if isinstance(df, pl.DataFrame):
+        return df.lazy()
+    # Assume pandas DataFrame
+    return pl.from_pandas(df, nan_to_null=True).lazy()
 
 
-@dataclass
+# ---------------------------------------------------------------------------
+# Pipeline execution context
+# ---------------------------------------------------------------------------
+
 class PipelineContext:
     """Mutable execution context shared by all AST nodes during a pipeline run.
 
     Attributes:
-        df: The current working :class:`pandas.DataFrame`.  Starts as
+        lf: The current working :class:`polars.LazyFrame`.  Starts as
             ``None`` and is first populated by a :class:`~ast_nodes.SourceNode`.
-        grouped: The current :class:`pandas.core.groupby.DataFrameGroupBy`
-            object produced by a :class:`~ast_nodes.GroupByNode`, or ``None``
-            when no grouping is active.
+        group_by_cols: Column names set by a :class:`~ast_nodes.GroupByNode`,
+            or ``None`` when no grouping is active.
         variables: Named variables set via ``set`` or ``env`` commands,
             referenced as ``$name`` in other commands.
         sandbox_dir: When set, all file I/O is restricted to this directory
             tree. Set via ``set sandbox = <dir>`` in a pipeline.
+        streaming: When ``True``, the final ``.collect()`` uses Polars'
+            streaming engine (activated by ``source … chunk N``).
     """
 
-    df: pd.DataFrame | None = field(default=None)
-    grouped: Any | None = field(default=None)
-    variables: dict = field(default_factory=dict)
-    sandbox_dir: str | None = field(default=None)
-
-
-def _run_chunked_pipeline(
-    source_node: ASTNode,
-    remaining_nodes: list[ASTNode],
-    context: PipelineContext,
-) -> pd.DataFrame | None:
-    """Execute a pipeline whose source is read in fixed-size chunks.
-
-    Chunk-safe nodes (filter, select, cast, rename, etc.) are applied
-    independently to each chunk, reducing peak memory usage.  The chunks
-    are then concatenated and the remaining nodes (sort, group-by, etc.)
-    are applied to the full result.
-
-    Args:
-        source_node: The :class:`~ast_nodes.SourceNode` with a non-null
-            ``chunk_size``.
-        remaining_nodes: All nodes after the source node.
-        context: Shared pipeline context.
-
-    Returns:
-        The final :class:`pandas.DataFrame` after all nodes have run.
-    """
-    from ast_nodes import _substitute_vars, _check_path_sandbox
-
-    path = _substitute_vars(source_node.file_path, context)
-    _check_path_sandbox(path, context)
-
-    # Split remaining nodes into per-chunk phase and post-concat phase.
-    chunk_phase: list[ASTNode] = []
-    post_phase: list[ASTNode] = []
-    in_chunk_phase = True
-    for node in remaining_nodes:
-        if in_chunk_phase and node.__class__.__name__ in _CHUNK_SAFE_NODE_NAMES:
-            chunk_phase.append(node)
+    def __init__(
+        self,
+        lf: pl.LazyFrame | None = None,
+        df: Any = None,                    # backward-compat: pandas / Polars DF
+        grouped: Any = None,               # backward-compat: ignored
+        group_by_cols: list[str] | None = None,
+        variables: dict | None = None,
+        sandbox_dir: str | None = None,
+        streaming: bool = False,
+    ) -> None:
+        if lf is not None:
+            self.lf: pl.LazyFrame | None = lf
+        elif df is not None:
+            self.lf = _to_lazy(df)
         else:
-            in_chunk_phase = False
-            post_phase.append(node)
+            self.lf = None
+        self.group_by_cols: list[str] | None = group_by_cols
+        self.variables: dict = variables if variables is not None else {}
+        self.sandbox_dir: str | None = sandbox_dir
+        self.streaming: bool = streaming
 
-    chunks_out: list[pd.DataFrame] = []
-    for chunk_df in pd.read_csv(path, chunksize=source_node.chunk_size, low_memory=False):
-        chunk_ctx = PipelineContext(
-            df=chunk_df,
-            variables=dict(context.variables),
-            sandbox_dir=context.sandbox_dir,
-        )
-        for node in chunk_phase:
-            node_name = node.__class__.__name__
-            try:
-                node.execute(chunk_ctx)
-            except (AssertionError, FileNotFoundError, KeyError, RuntimeError, ValueError) as exc:
-                raise type(exc)(f"[{node_name}] {exc}") from exc
-        if chunk_ctx.df is not None and not chunk_ctx.df.empty:
-            chunks_out.append(chunk_ctx.df)
+    # ------------------------------------------------------------------
+    # Backward-compatibility shims so legacy code and tests keep working
+    # ------------------------------------------------------------------
 
-    context.df = pd.concat(chunks_out, ignore_index=True, copy=False) if chunks_out else pd.DataFrame()
-    context.grouped = None
+    @property
+    def df(self) -> Any:
+        """Collect the current LazyFrame and return a :class:`pandas.DataFrame`."""
+        if self.lf is None:
+            return None
+        return self.lf.collect().to_pandas()
 
-    for node in post_phase:
-        node_name = node.__class__.__name__
-        try:
-            node.execute(context)
-        except (AssertionError, FileNotFoundError, KeyError, RuntimeError, ValueError) as exc:
-            raise type(exc)(f"[{node_name}] {exc}") from exc
+    @df.setter
+    def df(self, value: Any) -> None:
+        """Accept a pandas/Polars DataFrame (or ``None``) and store as LazyFrame."""
+        if value is None:
+            self.lf = None
+        else:
+            self.lf = _to_lazy(value)
 
-    return context.df
+    @property
+    def grouped(self) -> list[str] | None:
+        """Backward-compat — returns ``group_by_cols`` (truthy when grouping is active)."""
+        return self.group_by_cols
+
+    @grouped.setter
+    def grouped(self, value: Any) -> None:
+        """Setting ``grouped = None`` clears ``group_by_cols``."""
+        if value is None:
+            self.group_by_cols = None
+        # Non-None assignments (legacy pandas GroupBy objects) are ignored;
+        # GroupByNode sets group_by_cols directly instead.
 
 
-def run_pipeline(nodes: list[ASTNode]) -> pd.DataFrame | None:
+# ---------------------------------------------------------------------------
+# Pipeline runner
+# ---------------------------------------------------------------------------
+
+def run_pipeline(nodes: list[ASTNode]) -> Any:
     """Execute a sequence of AST nodes and return the resulting DataFrame.
 
-    Each node receives the same :class:`PipelineContext` instance and may
-    read or mutate ``context.df`` and ``context.grouped``.
+    The pipeline runs in Polars **lazy mode** throughout.  The final
+    LazyFrame is collected at the end and converted to a
+    :class:`pandas.DataFrame` for compatibility with the CLI.
 
-    If the first node is a :class:`~ast_nodes.SourceNode` with a
-    ``chunk_size``, the pipeline runs in chunked mode via
-    :func:`_run_chunked_pipeline` for large-file support.
+    When the first node is a :class:`~ast_nodes.SourceNode` with a
+    ``chunk_size``, Polars' streaming engine is used for the final collect,
+    reducing peak memory for large files.
 
     Args:
         nodes: Ordered list of :class:`~ast_nodes.ASTNode` objects as
-            produced by :func:`~parser.parse_lines`.
+            produced by :func:`~ppl_parser.parse_lines`.
 
     Returns:
-        The final :class:`pandas.DataFrame` stored in the context after all
-        nodes have been executed, or ``None`` if no data was produced.
+        A :class:`pandas.DataFrame` of the pipeline result, or ``None`` if
+        no data was produced.
 
     Raises:
-        RuntimeError: Re-raised from any node that encounters a semantic
-            error during execution (e.g. missing source, unknown column).
-        Exception: Any unexpected error from a node will propagate with an
-            informative message indicating which node type failed.
+        Exception: Re-raised from any node that encountered a semantic
+            error, prefixed with the failing node class name.
     """
     context = PipelineContext()
-
-    # Chunked mode: first node is a SourceNode with chunk_size set.
-    if nodes and getattr(nodes[0], "chunk_size", None):
-        return _run_chunked_pipeline(nodes[0], nodes[1:], context)
 
     for node in nodes:
         node_name = node.__class__.__name__
@@ -150,4 +138,18 @@ def run_pipeline(nodes: list[ASTNode]) -> pd.DataFrame | None:
             # Re-raise with the failing node type in the message for clarity.
             raise type(exc)(f"[{node_name}] {exc}") from exc
 
-    return context.df
+    if context.lf is None:
+        return None
+
+    try:
+        if context.streaming:
+            try:
+                polars_df = context.lf.collect(engine="streaming")
+            except TypeError:
+                polars_df = context.lf.collect()
+        else:
+            polars_df = context.lf.collect()
+    except Exception as exc:
+        raise RuntimeError(f"Pipeline collection failed: {exc}") from exc
+
+    return polars_df.to_pandas()

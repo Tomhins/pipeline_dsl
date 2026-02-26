@@ -958,7 +958,109 @@ label is tracked separately.
 
 ---
 
-## 16. Quick Reference Card
+## 16. Working with Timestamps
+
+This section shows how to use Pipeline DSL's date and time commands.  All timestamp
+operations work on Polars `Datetime` columns.  Use `parse_date` to convert string
+columns first.
+
+### Sample data
+
+```
+date_str,product,revenue
+2024-01-15,Widget,1200
+2024-02-03,Gadget,850
+2024-03-21,Widget,2400
+2024-04-10,Gadget,975
+2024-05-05,Widget,1800
+```
+
+Save this as `data/sales.csv` and follow along.
+
+### Parse a string column into a datetime
+
+```
+source "data/sales.csv"
+parse_date date_str "%Y-%m-%d"
+schema
+```
+
+`date_str` is now a `Datetime` column instead of a plain string.
+
+### Extract a date part
+
+```
+source "data/sales.csv"
+parse_date date_str "%Y-%m-%d"
+extract month from date_str as sale_month
+select sale_month, product, revenue
+print
+```
+
+```
+sale_month product  revenue
+         1  Widget     1200
+         2  Gadget      850
+         3  Widget     2400
+         4  Gadget      975
+         5  Widget     1800
+```
+
+### Filter by date
+
+Keep only rows on or after 1 March 2024:
+
+```
+source "data/sales.csv"
+parse_date date_str "%Y-%m-%d"
+filter_date date_str >= 2024-03-01
+print
+```
+
+### Truncate to month
+
+Useful for grouping by calendar month:
+
+```
+source "data/sales.csv"
+parse_date date_str "%Y-%m-%d"
+truncate_date date_str to month
+group by date_str
+sum revenue
+sort by date_str asc
+print
+```
+
+### Compute date differences
+
+If your data has two date columns (e.g. `start_date` and `end_date`), you can
+compute the gap between them:
+
+```
+source "data/projects.csv"
+parse_date start_date "%Y-%m-%d"
+parse_date end_date   "%Y-%m-%d"
+date_diff end_date start_date as duration_days in days
+print
+```
+
+### Sort chronologically
+
+`ts_sort` is a convenience wrapper for sorting by a datetime column ascending:
+
+```
+source "data/sales.csv"
+parse_date date_str "%Y-%m-%d"
+ts_sort date_str
+print
+```
+
+**Tip:** You can also combine several timestamp commands.  The tutorial file
+`tutorials/10_timestamps.ppl` has a complete worked example.
+
+---
+
+## 17. Quick Reference Card
 
 ```
 # ── LOADING ──────────────────────────────────────
@@ -1027,6 +1129,14 @@ try                            # catch errors from enclosed commands
     <commands>
 on_error skip                  # skip | log "msg" | any command
 
+# ── TIMESTAMPS ───────────────────────────────────
+parse_date col "%Y-%m-%d"      # parse string → datetime
+extract year from col as y     # parts: year month day hour minute second weekday quarter
+date_diff end start as d in days  # units: days hours minutes seconds
+filter_date col >= 2024-01-01  # operators: > < >= <= ==
+truncate_date col to month     # units: year month week day hour minute second
+ts_sort col                    # sort chronologically (ascending)
+
 # ── OUTPUT ───────────────────────────────────────
 save "file.csv"                # save as CSV
 save "file.json"               # save as JSON
@@ -1044,4 +1154,4 @@ log "message with $var"        # print during execution
 
 ---
 
-*Pipeline DSL is built with Python + pandas. Source code: [github.com/Tomhins/pipeline_dsl](https://github.com/Tomhins/pipeline_dsl)*
+*Pipeline DSL is built with Python + Polars. Source code: [github.com/Tomhins/pipeline_dsl](https://github.com/Tomhins/pipeline_dsl)*

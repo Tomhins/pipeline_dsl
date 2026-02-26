@@ -277,7 +277,10 @@ class TestAddIfNode:
 
 class TestTrimNode:
     def test_strips_whitespace(self, ctx):
-        ctx.df["name"] = ctx.df["name"].apply(lambda x: f"  {x}  ")
+        import pandas as pd
+        df = ctx.df.copy()
+        df["name"] = df["name"].apply(lambda x: f"  {x}  ")
+        ctx.df = df  # re-assign so the LazyFrame is updated
         TrimNode(column="name").execute(ctx)
         assert all(not v.startswith(" ") for v in ctx.df["name"])
 

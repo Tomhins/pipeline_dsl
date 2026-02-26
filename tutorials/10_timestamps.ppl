@@ -1,0 +1,56 @@
+# ── Tutorial 10: Working with Timestamps ────────────────────────────────────
+#
+# This tutorial demonstrates all six timestamp commands:
+#   parse_date   – convert a string column to a Datetime type
+#   extract      – pull out a single date/time component
+#   date_diff    – compute the gap between two datetime columns
+#   filter_date  – keep rows where a datetime meets a condition
+#   truncate_date – round a datetime down to a given precision
+#   ts_sort      – sort chronologically (ascending)
+#
+# We build a small inline dataset using variables and a header-only CSV trick,
+# but in practice you would point source at a real file.
+#
+# To run:
+#   ppl tutorials/10_timestamps.ppl
+# ----------------------------------------------------------------------------
+
+# Step 0 – load sample data
+# The data/people.csv file does not have dates, so we use the youtube file
+# which has a "publishedAt" column in ISO-8601 format.
+source "data/youtube_trending_videos_global_cleaned.csv"
+
+# Step 1 – parse the string column into a proper Datetime
+log "Step 1: parsing publishedAt as a datetime..."
+parse_date publishedAt "%Y-%m-%dT%H:%M:%SZ"
+
+# Step 2 – extract the year and month into new columns
+log "Step 2: extracting year and month..."
+extract year  from publishedAt as pub_year
+extract month from publishedAt as pub_month
+
+# Step 3 – keep only videos published on or after 2023-01-01
+log "Step 3: filtering to 2023 and later..."
+filter_date publishedAt >= 2023-01-01
+
+# Step 4 – truncate the timestamp to calendar month
+#           (useful for grouping by month later)
+log "Step 4: truncating to month..."
+truncate_date publishedAt to month
+
+# Step 5 – sort chronologically
+log "Step 5: sorting by publish date..."
+ts_sort publishedAt
+
+# Step 6 – show a preview
+select publishedAt, pub_year, pub_month, title
+head 10
+
+# Step 7 – group by month and count videos per month
+log "Step 7: counting videos per calendar month..."
+group by publishedAt
+count
+sort by publishedAt asc
+head 12
+
+log "Timestamp tutorial complete."
