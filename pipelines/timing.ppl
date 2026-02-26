@@ -1,0 +1,58 @@
+# Timing & Logging — Pipeline DSL example
+#
+# Demonstrates: timer start/lap/stop, log, multiple concurrent timers
+# Run with: ppl pipelines/timing.ppl
+#
+# Use timers to profile individual pipeline stages so you can identify
+# bottlenecks when working with large datasets.
+
+# ── 1. Start an overall timer for the whole pipeline ─────────────────────────
+timer start total
+
+# ── 2. Time the data-loading phase ───────────────────────────────────────────
+log "Starting data load..."
+timer start load
+
+source "../data/people.csv"
+
+timer stop load     # prints: [TIMER] load: Xs — loading phase complete
+
+# ── 3. Log a checkpoint after loading ────────────────────────────────────────
+log "Data loaded — beginning transformations"
+inspect             # print schema and null counts
+
+# ── 4. Time the transformation phase ─────────────────────────────────────────
+timer start transform
+
+fill salary 0
+fill country "Unknown"
+cast salary float
+
+rename salary income
+add tax        = income * 0.2
+add net_income = income - tax
+
+filter age >= 18
+sort by net_income desc
+
+# Lap checkpoint — prints elapsed so far without stopping the timer
+timer lap transform      # prints: [LAP] transform: Xs
+
+distinct
+limit 50
+
+timer stop transform     # prints: [TIMER] transform: Xs — full transform done
+
+# ── 5. Time the output phase ──────────────────────────────────────────────────
+log "Writing output..."
+timer start output
+
+save "../output/timing_example.csv"
+
+timer stop output        # prints: [TIMER] output: Xs
+
+# ── 6. Stop the overall timer ─────────────────────────────────────────────────
+log "Pipeline complete."
+timer stop total         # prints: [TIMER] total: Xs — end-to-end duration
+
+print

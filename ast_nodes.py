@@ -1,7 +1,65 @@
 """AST node definitions for the pipeline DSL.
 
-Each node corresponds to one DSL command and knows how to execute
-itself against a :class:`~executor.PipelineContext`.
+Each DSL command is represented by exactly one node class.  Every node is a
+:mod:`dataclasses` dataclass with an ``execute(context)`` method that reads
+and/or mutates the shared :class:`~executor.PipelineContext`.
+
+Node categories
+---------------
+
+**Data loading**
+    :class:`SourceNode`, :class:`ForeachNode`, :class:`IncludeNode`
+
+**Filtering**
+    :class:`FilterNode`, :class:`CompoundFilterNode`
+
+**Column selection / projection**
+    :class:`SelectNode`, :class:`DropNode`, :class:`LimitNode`,
+    :class:`DistinctNode`, :class:`SampleNode`
+
+**Transformation**
+    :class:`SortNode`, :class:`RenameNode`, :class:`AddNode`,
+    :class:`AddIfNode`, :class:`TrimNode`, :class:`UppercaseNode`,
+    :class:`LowercaseNode`, :class:`CastNode`, :class:`ReplaceNode`,
+    :class:`PivotNode`
+
+**Grouping**
+    :class:`GroupByNode`
+
+**Aggregation**
+    :class:`CountNode`, :class:`CountIfNode`,
+    ``SumNode``, ``AvgNode``, ``MinNode``, ``MaxNode`` (built by
+    :func:`_agg_node`), :class:`MultiAggNode`
+
+**Multi-source / joining**
+    :class:`JoinNode`, :class:`MergeNode`
+
+**Output & inspection**
+    :class:`SaveNode`, :class:`PrintNode`, :class:`SchemaNode`,
+    :class:`InspectNode`, :class:`HeadNode`, :class:`LogNode`,
+    :class:`TimerNode`
+
+**Data quality**
+    :class:`AssertNode`, :class:`FillNode`
+
+**Variables & environment**
+    :class:`SetNode`, :class:`EnvNode`
+
+**Error recovery**
+    :class:`TryNode`
+
+Helper utilities
+----------------
+:func:`_apply_operator`
+    Apply a comparison operator to a pandas Series.
+:func:`_resolve_value`
+    Resolve a ``$varname`` token to its value in the pipeline context.
+:func:`_substitute_vars`
+    Replace all ``$varname`` tokens in a string.
+:func:`_coerce_rhs`
+    Parse a raw string as a float, falling back to a plain string.
+:func:`_check_path_sandbox`
+    Raise :exc:`PermissionError` if a file path is outside the sandbox.
 """
 
 from __future__ import annotations
