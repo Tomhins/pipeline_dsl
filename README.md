@@ -843,4 +843,6 @@ Copyright (c) 2026 Tom Kremser.
 Licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
 
 Free to use, share, and adapt with attribution — commercial use is not permitted.
+Pipeline_dsl is licensed under CC BY-NC 4.0 for non-commercial use.  
+For commercial use, contact Tom K for a commercial license.
 See [LICENSE](LICENSE) for full details.
